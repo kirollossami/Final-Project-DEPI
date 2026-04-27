@@ -19,7 +19,7 @@ public class LandLordRegisterRequest : RegisterRequest
 /// </summary>
 public class UpdateLandLordRequest
 {
-    public string FullName { get; set; }
+    public Guid LandLordId { get; set; }
     public string? CompanyName { get; set; }
 }
 
