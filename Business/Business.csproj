@@ -7,13 +7,26 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Folder Include="DTOs\Responces\" />
-    <Folder Include="DTOs\Requests\" />
+    <Compile Remove="DTOs\Responces\**" />
+    <EmbeddedResource Remove="DTOs\Responces\**" />
+    <None Remove="DTOs\Responces\**" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Folder Include="Mappers\" />
     <Folder Include="Interfaces\" />
+    <Folder Include="Mappers\" />
+    <Folder Include="InterFaces\" />
     <Folder Include="Validators\" />
     <Folder Include="Settings\" />
     <Folder Include="Services\" />
+    <Folder Include="Validators\" />
+    <Folder Include="Settings\" />
+    <Folder Include="Services\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Domain\Domain.csproj" />
   </ItemGroup>
 
 </Project>
