@@ -106,7 +106,7 @@ public class NotificationService : INotificationService
         if (notification == null) return false;
 
         notification.IsSeen = true;
-        _notificationRepository.Update(notification);
+        await _notificationRepository.Update(notification);
         await _notificationRepository.CommitAsync();
 
         return true;

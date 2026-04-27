@@ -135,7 +135,7 @@ public class ComplaintService : IComplaintService
         var complaint = await _complaintRepository.GetAsync(complaintId);
         if (complaint == null) return false;
 
-        _complaintRepository.Delete(complaint);
+        await _complaintRepository.Delete(complaint);
         await _complaintRepository.CommitAsync();
 
         return true;

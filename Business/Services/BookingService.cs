@@ -83,6 +83,18 @@ public class BookingService : IBookingService
 
     public async Task<BookingResponse?> CreateBookingAsync(BookingCreateRequest request)
     {
+        // Calculate total price based on room price and duration
+        var room = await _bookingRepository.GetAll()
+            .Include(b => b.Room)
+            .FirstOrDefaultAsync(b => b.RoomId == request.RoomId);
+        
+        if (room == null) return null;
+
+        var durationDays = (request.EndDate - request.StartDate).Days;
+        if (durationDays <= 0) return null;
+
+        var totalPrice = room.Room?.Price * durationDays ?? 0;
+
         var booking = new Domain.Entities.Booking
         {
             BookingId = Guid.NewGuid(),
@@ -90,7 +102,7 @@ public class BookingService : IBookingService
             RoomId = request.RoomId,
             StartDate = request.StartDate,
             EndDate = request.EndDate,
-            TotalPrice = 0, // Will be calculated based on room price and duration
+            TotalPrice = totalPrice,
             BookingStatus = BookingStatus.Pending,
             IsDeleted = false
         };
@@ -130,7 +142,7 @@ public class BookingService : IBookingService
             booking.BookingStatus = request.BookingStatus.Value;
         }
 
-        _bookingRepository.Update(booking);
+        await _bookingRepository.Update(booking);
         await _bookingRepository.CommitAsync();
 
         return new BookingResponse
@@ -153,7 +165,7 @@ public class BookingService : IBookingService
         booking.BookingStatus = BookingStatus.Cancelled;
         booking.IsDeleted = true;
 
-        _bookingRepository.Update(booking);
+        await _bookingRepository.Update(booking);
         await _bookingRepository.CommitAsync();
 
         return true;

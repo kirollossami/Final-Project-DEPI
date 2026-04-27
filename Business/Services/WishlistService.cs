@@ -92,7 +92,7 @@ public class WishlistService : IWishlistService
         var wishlist = await _wishlistRepository.GetAsync(wishlistId);
         if (wishlist == null) return false;
 
-        _wishlistRepository.Delete(wishlist);
+        await _wishlistRepository.Delete(wishlist);
         await _wishlistRepository.CommitAsync();
 
         return true;

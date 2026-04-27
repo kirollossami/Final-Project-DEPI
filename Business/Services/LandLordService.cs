@@ -4,6 +4,7 @@ using Business.Interfaces;
 using Domain.Entities;
 using Domain.Enums;
 using Infrastructure.Repositories;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 
 namespace Business.Services;
@@ -11,10 +12,12 @@ namespace Business.Services;
 public class LandLordService : ILandLordService
 {
     private readonly ILandLordRepository _landLordRepository;
+    private readonly UserManager<User> _userManager;
 
-    public LandLordService(ILandLordRepository landLordRepository)
+    public LandLordService(ILandLordRepository landLordRepository, UserManager<User> userManager)
     {
         _landLordRepository = landLordRepository;
+        _userManager = userManager;
     }
 
     public async Task<LandLordResponse?> GetLandLordByIdAsync(Guid landLordId)
@@ -71,31 +74,6 @@ public class LandLordService : ILandLordService
         };
     }
 
-    public async Task<LandLordResponse?> CreateLandLordAsync(LandLordRegisterRequest request)
-    {
-        var landlord = new Domain.Entities.LandLord
-        {
-            LandLordId = Guid.NewGuid(),
-            UserId = Guid.NewGuid().ToString(),
-            CompanyName = request.CompanyName,
-            NationalId = request.NationalId,
-            PropertyOwnerShipProof = request.PropertyOwnerShipProof,
-            VerificationStatus = "Pending"
-        };
-
-        await _landLordRepository.Insert(landlord);
-        await _landLordRepository.CommitAsync();
-
-        return new LandLordResponse
-        {
-            LandLordId = landlord.LandLordId,
-            UserId = landlord.UserId.ToString(),
-            CompanyName = landlord.CompanyName,
-            NationalId = landlord.NationalId,
-            VerificationStatus = landlord.VerificationStatus.ToString()
-        };
-    }
-
     public async Task<LandLordResponse?> UpdateLandLordAsync(UpdateLandLordRequest request)
     {
         var landlord = await _landLordRepository.GetAll()
@@ -109,7 +87,7 @@ public class LandLordService : ILandLordService
             landlord.CompanyName = request.CompanyName;
         }
 
-        _landLordRepository.Update(landlord);
+        await _landLordRepository.Update(landlord);
         await _landLordRepository.CommitAsync();
 
         return new LandLordResponse
@@ -127,9 +105,63 @@ public class LandLordService : ILandLordService
         var landlord = await _landLordRepository.GetAsync(landLordId);
         if (landlord == null) return false;
 
-        _landLordRepository.Delete(landlord);
+        await _landLordRepository.Delete(landlord);
         await _landLordRepository.CommitAsync();
 
         return true;
+    }
+
+    public async Task<LandLordResponse?> GetLandLordByUserIdAsync(string userId)
+    {
+        var landlord = await _landLordRepository.GetAll()
+            .Include(l => l.User)
+            .FirstOrDefaultAsync(l => l.UserId == userId);
+
+        if (landlord == null) return null;
+
+        return new LandLordResponse
+        {
+            LandLordId = landlord.LandLordId,
+            UserId = landlord.UserId,
+            CompanyName = landlord.CompanyName,
+            NationalId = landlord.NationalId,
+            VerificationStatus = landlord.VerificationStatus
+        };
+    }
+
+    public async Task<bool> DeactivateLandLordAsync(Guid landLordId)
+    {
+        var landlord = await _landLordRepository.GetAll()
+            .Include(l => l.User)
+            .FirstOrDefaultAsync(l => l.LandLordId == landLordId);
+        
+        if (landlord == null || landlord.User == null) return false;
+
+        landlord.User.IsActive = false;
+        await _userManager.UpdateAsync(landlord.User);
+
+        return true;
+    }
+
+    public async Task<bool> ReactivateLandLordAsync(Guid landLordId)
+    {
+        var landlord = await _landLordRepository.GetAll()
+            .Include(l => l.User)
+            .FirstOrDefaultAsync(l => l.LandLordId == landLordId);
+        
+        if (landlord == null || landlord.User == null) return false;
+
+        landlord.User.IsActive = true;
+        await _userManager.UpdateAsync(landlord.User);
+
+        return true;
+    }
+
+    public async Task<bool> ValidateNationalIdAsync(string nationalId)
+    {
+        var existingLandlord = await _landLordRepository.GetAll()
+            .FirstOrDefaultAsync(l => l.NationalId == nationalId);
+        
+        return existingLandlord == null;
     }
 }
