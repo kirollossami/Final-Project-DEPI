@@ -16,4 +16,11 @@ public static class ErrorMessageHelper
     public static string PasswordsDoNotMatch => "New password and confirm password do not match.";
     public static string CurrentPasswordAndNewPasswordAreRequired => "Current password and new password are required.";
     public static string CurrentPasswordIncorrect => "Current password is incorrect.";
+    public static string EmailAlreadyExists => "Email already exists.";
+    public static string AccountInactive => "Account is inactive.";
+    public static string LoginSuccess => "Login successful.";
+    public static string RegistrationSuccess => "Registration successful.";
+    public static string InvalidToken => "Invalid token.";
+    public static string TokenRefreshed => "Token refreshed successfully.";
 }
+
