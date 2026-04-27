@@ -90,6 +90,20 @@ public class AuthService : IAuthService
             };
         }
 
+        // Check if student already exists with this email (via User)
+        var existingStudent = await _studentRepository.GetAll()
+            .Include(s => s.User)
+            .FirstOrDefaultAsync(s => s.User != null && s.User.Email == request.Email);
+        
+        if (existingStudent != null)
+        {
+            return new AuthResponse
+            {
+                Success = false,
+                Message = "Student with this email already exists"
+            };
+        }
+
         var user = new User
         {
             UserName = request.Email,
@@ -158,6 +172,20 @@ public class AuthService : IAuthService
             {
                 Success = false,
                 Message = ErrorMessageHelper.EmailAlreadyExists
+            };
+        }
+
+        // Check if landlord already exists with this email (via User)
+        var existingLandlord = await _landLordRepository.GetAll()
+            .Include(l => l.User)
+            .FirstOrDefaultAsync(l => l.User != null && l.User.Email == request.Email);
+        
+        if (existingLandlord != null)
+        {
+            return new AuthResponse
+            {
+                Success = false,
+                Message = "Landlord with this email already exists"
             };
         }
 

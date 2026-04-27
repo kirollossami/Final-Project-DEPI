@@ -133,7 +133,8 @@ public class HousingUnitService : IHousingUnitService
             NumberOfRooms = request.NumberOfRooms,
             IsAvailable = request.IsAvailable,
             AverageRating = 0,
-            ReviewCount = 0
+            ReviewCount = 0,
+            IsDeleted = false
         };
 
         await _housingUnitRepository.Insert(housingUnit);
@@ -254,7 +255,7 @@ public class HousingUnitService : IHousingUnitService
         var housingUnit = await _housingUnitRepository.GetAsync(housingUnitId);
         if (housingUnit == null) return false;
 
-        _housingUnitRepository.Delete(housingUnit);
+        await _housingUnitRepository.Delete(housingUnit);
         await _housingUnitRepository.CommitAsync();
 
         return true;

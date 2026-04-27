@@ -124,7 +124,7 @@ public class ReviewService : IReviewService
             review.Comment = request.Comment;
         }
 
-        _reviewRepository.Update(review);
+        await _reviewRepository.Update(review);
         await _reviewRepository.CommitAsync();
 
         await UpdateHousingUnitRatingAsync(review.HousingUnitId);
@@ -145,7 +145,7 @@ public class ReviewService : IReviewService
         var review = await _reviewRepository.GetAsync(reviewId);
         if (review == null) return false;
 
-        _reviewRepository.Delete(review);
+        await _reviewRepository.Delete(review);
         await _reviewRepository.CommitAsync();
 
         await UpdateHousingUnitRatingAsync(review.HousingUnitId);

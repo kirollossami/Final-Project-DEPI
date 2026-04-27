@@ -144,7 +144,7 @@ public class RoomService : IRoomService
             room.IsAvailable = request.IsAvailable.Value;
         }
 
-        _roomRepository.Update(room);
+        await _roomRepository.Update(room);
         await _roomRepository.CommitAsync();
 
         return new RoomResponse
@@ -164,7 +164,7 @@ public class RoomService : IRoomService
         var room = await _roomRepository.GetAsync(roomId);
         if (room == null) return false;
 
-        _roomRepository.Delete(room);
+        await _roomRepository.Delete(room);
         await _roomRepository.CommitAsync();
 
         return true;
