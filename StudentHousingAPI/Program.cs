@@ -2,6 +2,7 @@ using Business.Interfaces;
 using Business.Services;
 using Business.Settings;
 using Domain.Entities;
+using FluentValidation;
 using Infrastructure.Context;
 using Infrastructure.Repositories;
 using Infrastructure.Repositories.Base;
@@ -9,6 +10,8 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using SharpGrip.FluentValidation.AutoValidation.Endpoints.Extensions;
+using StudentHousingAPI.Validators;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -88,6 +91,13 @@ builder.Services.AddScoped<IWishlistService, WishlistService>();
 builder.Services.AddScoped<IComplaintService, ComplaintService>();
 builder.Services.AddScoped<IPaymentService, PaymentService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
+
+#region Validators
+builder.Services.AddValidatorsFromAssemblyContaining<LoginValidator>();
+builder.Services.AddValidatorsFromAssemblyContaining<StudentRegisterValidator>();
+builder.Services.AddFluentValidationAutoValidation();
+#endregion
+
 
 // Add CORS
 builder.Services.AddCors(options =>
