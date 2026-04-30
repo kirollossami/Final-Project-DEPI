@@ -13,10 +13,11 @@ namespace Domain.Entities
         public string? UserId { get; set; }
         public DateTime DateOfBirth { get; set; }
         public Gender Gender { get; set; }
-        public string Address { get; set; }
-        public string City { get; set; }
-        public string PreferredArea { get; set; }
-        public string NationalId { get; set; }
+        public string? Address { get; set; }
+        public string? City { get; set; }
+        public string? PreferredArea { get; set; }
+        public string? NationalId { get; set; }
+        public bool IsOnboardingComplete { get; set; } = true; // Default true for manual registration
 
         public virtual User? User { get; set; }
         public virtual ICollection<Booking>? Bookings { get; set; }

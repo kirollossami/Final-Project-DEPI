@@ -4,9 +4,11 @@ using Business.Helpers;
 using Business.Interfaces;
 using Domain.Entities;
 using Domain.Enums;
+using Google.Apis.Auth;
 using Infrastructure.Repositories;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 
 namespace Business.Services;
 
@@ -18,6 +20,7 @@ public class AuthService : IAuthService
     private readonly ILandLordRepository _landLordRepository;
     private readonly IRefreshTokenRepository _refreshTokenRepository;
     private readonly ITokenBlacklistService _tokenBlacklistService;
+    private readonly IConfiguration _configuration;
 
     public AuthService(
         UserManager<User> userManager,
@@ -25,7 +28,8 @@ public class AuthService : IAuthService
         IStudentRepository studentRepository,
         ILandLordRepository landLordRepository,
         IRefreshTokenRepository refreshTokenRepository,
-        ITokenBlacklistService tokenBlacklistService)
+        ITokenBlacklistService tokenBlacklistService,
+        IConfiguration configuration)
     {
         _userManager = userManager;
         _tokenService = tokenService;
@@ -33,6 +37,7 @@ public class AuthService : IAuthService
         _landLordRepository = landLordRepository;
         _refreshTokenRepository = refreshTokenRepository;
         _tokenBlacklistService = tokenBlacklistService;
+        _configuration = configuration;
     }
 
     public async Task<AuthResponse> LoginAsync(LoginRequest request)
@@ -60,8 +65,18 @@ public class AuthService : IAuthService
         var accessToken = _tokenService.GenerateAccessToken(user, roles);
         var refreshToken = _tokenService.GenerateRefreshToken();
 
-        var student = await _studentRepository.GetAll().FirstOrDefaultAsync(s => s.UserId == user.Id);
-        var landlord = await _landLordRepository.GetAll().FirstOrDefaultAsync(l => l.UserId == user.Id);
+        // Optimize: Only query based on user's role
+        var studentId = (Guid?)null;
+        var landlordId = (Guid?)null;
+
+        if (roles.Contains("Student"))
+        {
+            studentId = (await _studentRepository.GetAll().FirstOrDefaultAsync(s => s.UserId == user.Id))?.StudentId;
+        }
+        else if (roles.Contains("LandLord"))
+        {
+            landlordId = (await _landLordRepository.GetAll().FirstOrDefaultAsync(l => l.UserId == user.Id))?.LandLordId;
+        }
 
         var refreshTokenEntity = new Domain.Entities.RefreshToken
         {
@@ -75,6 +90,9 @@ public class AuthService : IAuthService
         await _refreshTokenRepository.Insert(refreshTokenEntity);
         await _refreshTokenRepository.CommitAsync();
 
+        var jwtSettings = _configuration.GetSection("JwtSettings");
+        var expiryMinutes = int.Parse(jwtSettings["ExpiryMinutes"] ?? "60");
+
         return new AuthResponse
         {
             Success = true,
@@ -82,7 +100,8 @@ public class AuthService : IAuthService
             Token = new TokenResponse
             {
                 AccessToken = accessToken,
-                RefreshToken = refreshToken
+                RefreshToken = refreshToken,
+                ExpiresIn = expiryMinutes * 60 // Convert to seconds
             },
             User = new UserResponse
             {
@@ -90,8 +109,8 @@ public class AuthService : IAuthService
                 Email = user.Email,
                 PhoneNumber = user.PhoneNumber,
                 Roles = roles.ToArray(),
-                StudentId = student?.StudentId,
-                LandLordId = landlord?.LandLordId
+                StudentId = studentId,
+                LandLordId = landlordId
             }
         };
     }
@@ -151,7 +170,8 @@ public class AuthService : IAuthService
             Address = request.Address,
             City = request.City,
             PreferredArea = request.PreferredArea,
-            NationalId = request.NationalId
+            NationalId = request.NationalId,
+            IsOnboardingComplete = true // Manual registration is complete
         };
 
         await _studentRepository.Insert(student);
@@ -173,6 +193,9 @@ public class AuthService : IAuthService
         await _refreshTokenRepository.Insert(refreshTokenEntity);
         await _refreshTokenRepository.CommitAsync();
 
+        var jwtSettings = _configuration.GetSection("JwtSettings");
+        var expiryMinutes = int.Parse(jwtSettings["ExpiryMinutes"] ?? "60");
+
         return new AuthResponse
         {
             Success = true,
@@ -180,7 +203,8 @@ public class AuthService : IAuthService
             Token = new TokenResponse
             {
                 AccessToken = accessToken,
-                RefreshToken = refreshToken
+                RefreshToken = refreshToken,
+                ExpiresIn = expiryMinutes * 60 // Convert to seconds
             },
             User = new UserResponse
             {
@@ -268,6 +292,9 @@ public class AuthService : IAuthService
         await _refreshTokenRepository.Insert(refreshTokenEntity);
         await _refreshTokenRepository.CommitAsync();
 
+        var jwtSettings = _configuration.GetSection("JwtSettings");
+        var expiryMinutes = int.Parse(jwtSettings["ExpiryMinutes"] ?? "60");
+
         return new AuthResponse
         {
             Success = true,
@@ -275,7 +302,8 @@ public class AuthService : IAuthService
             Token = new TokenResponse
             {
                 AccessToken = accessToken,
-                RefreshToken = refreshToken
+                RefreshToken = refreshToken,
+                ExpiresIn = expiryMinutes * 60 // Convert to seconds
             },
             User = new UserResponse
             {
@@ -361,6 +389,9 @@ public class AuthService : IAuthService
         await _refreshTokenRepository.Insert(newRefreshTokenEntity);
         await _refreshTokenRepository.CommitAsync();
 
+        var jwtSettings = _configuration.GetSection("JwtSettings");
+        var expiryMinutes = int.Parse(jwtSettings["ExpiryMinutes"] ?? "60");
+
         return new AuthResponse
         {
             Success = true,
@@ -368,7 +399,8 @@ public class AuthService : IAuthService
             Token = new TokenResponse
             {
                 AccessToken = accessToken,
-                RefreshToken = newRefreshToken
+                RefreshToken = newRefreshToken,
+                ExpiresIn = expiryMinutes * 60 // Convert to seconds
             }
         };
     }
@@ -411,6 +443,168 @@ public class AuthService : IAuthService
         catch
         {
             return false;
+        }
+    }
+
+    public async Task<AuthResponse> GoogleLoginAsync(GoogleLoginRequest request)
+    {
+        try
+        {
+            var googleClientId = _configuration["Authentication:Google:ClientId"];
+            
+            if (string.IsNullOrEmpty(googleClientId) || googleClientId == "your-google-client-id.apps.googleusercontent.com")
+            {
+                return new AuthResponse
+                {
+                    Success = false,
+                    Message = "Google OAuth is not configured properly. Please set ClientId in appsettings.json"
+                };
+            }
+
+            if (string.IsNullOrEmpty(request.IdToken))
+            {
+                return new AuthResponse
+                {
+                    Success = false,
+                    Message = "Google ID token is required."
+                };
+            }
+
+            var validationSettings = new GoogleJsonWebSignature.ValidationSettings
+            {
+                Audience = new[] { googleClientId }
+            };
+
+            var payload = await GoogleJsonWebSignature.ValidateAsync(request.IdToken, validationSettings);
+
+            // Use Google Subject (user ID) for identification - more reliable than email
+            var googleId = payload.Subject;
+            var user = await _userManager.Users.FirstOrDefaultAsync(u => u.GoogleId == googleId);
+
+            if (user == null)
+            {
+                // Check if user exists with same email but no GoogleId (merge accounts)
+                user = await _userManager.FindByEmailAsync(payload.Email);
+                
+                if (user != null)
+                {
+                    // Link existing account with Google
+                    user.GoogleId = googleId;
+                    user.IsGoogleUser = true;
+                    await _userManager.UpdateAsync(user);
+                }
+                else
+                {
+                    // Create new user with Google account
+                    user = new User
+                    {
+                        UserName = payload.Email,
+                        Email = payload.Email,
+                        GoogleId = googleId,
+                        IsGoogleUser = true,
+                        IsActive = true
+                    };
+
+                    var createResult = await _userManager.CreateAsync(user);
+                    if (!createResult.Succeeded)
+                    {
+                        return new AuthResponse
+                        {
+                            Success = false,
+                            Message = $"Failed to create user from Google account: {string.Join(", ", createResult.Errors.Select(e => e.Description))}"
+                        };
+                    }
+
+                    await _userManager.AddToRoleAsync(user, "Student");
+
+                    // Create Student entity with default values for Google users
+                    // User will need to complete profile later
+                    var studentEntity = new Domain.Entities.Student
+                    {
+                        StudentId = Guid.NewGuid(),
+                        UserId = user.Id,
+                        DateOfBirth = DateTime.UtcNow.AddYears(-18), // Default to 18 years ago
+                        Gender = Domain.Enums.Gender.Male, // Default gender
+                        Address = null,
+                        City = null,
+                        PreferredArea = null,
+                        NationalId = "00000000000000", // Placeholder, will be updated during onboarding
+                        IsOnboardingComplete = false // Flag to track onboarding status
+                    };
+
+                    await _studentRepository.Insert(studentEntity);
+                    await _studentRepository.CommitAsync();
+                }
+            }
+
+            var roles = await _userManager.GetRolesAsync(user);
+            var accessToken = _tokenService.GenerateAccessToken(user, roles);
+            var refreshToken = _tokenService.GenerateRefreshToken();
+
+            // Optimize: Only query based on user's role
+            var studentId = (Guid?)null;
+            var landlordId = (Guid?)null;
+
+            if (roles.Contains("Student"))
+            {
+                studentId = (await _studentRepository.GetAll().FirstOrDefaultAsync(s => s.UserId == user.Id))?.StudentId;
+            }
+            else if (roles.Contains("LandLord"))
+            {
+                landlordId = (await _landLordRepository.GetAll().FirstOrDefaultAsync(l => l.UserId == user.Id))?.LandLordId;
+            }
+
+            var refreshTokenEntity = new Domain.Entities.RefreshToken
+            {
+                Token = refreshToken,
+                UserId = user.Id,
+                IsRevoked = false,
+                ExpiryDate = DateTime.UtcNow.AddDays(7),
+                CreatedAt = DateTime.UtcNow
+            };
+
+            await _refreshTokenRepository.Insert(refreshTokenEntity);
+            await _refreshTokenRepository.CommitAsync();
+
+            var jwtSettings = _configuration.GetSection("JwtSettings");
+            var expiryMinutes = int.Parse(jwtSettings["ExpiryMinutes"] ?? "60");
+
+            return new AuthResponse
+            {
+                Success = true,
+                Message = ErrorMessageHelper.LoginSuccess,
+                Token = new TokenResponse
+                {
+                    AccessToken = accessToken,
+                    RefreshToken = refreshToken,
+                    ExpiresIn = expiryMinutes * 60 // Convert to seconds
+                },
+                User = new UserResponse
+                {
+                    Id = user.Id,
+                    Email = user.Email,
+                    PhoneNumber = user.PhoneNumber,
+                    Roles = roles.ToArray(),
+                    StudentId = studentId,
+                    LandLordId = landlordId
+                }
+            };
+        }
+        catch (InvalidJwtException ex)
+        {
+            return new AuthResponse
+            {
+                Success = false,
+                Message = $"Invalid Google token: {ex.Message}"
+            };
+        }
+        catch (Exception ex)
+        {
+            return new AuthResponse
+            {
+                Success = false,
+                Message = $"Google login failed: {ex.Message}"
+            };
         }
     }
 }
