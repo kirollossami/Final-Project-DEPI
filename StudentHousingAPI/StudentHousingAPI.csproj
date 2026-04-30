@@ -1,17 +1,10 @@
-<<<<<<< HEAD
-﻿<Project Sdk="Microsoft.NET.Sdk.Web">
-=======
 <Project Sdk="Microsoft.NET.Sdk.Web">
->>>>>>> d373b1145cc825f184dd583507a557a4aaf9a1f0
 
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-<<<<<<< HEAD
     <UserSecretsId>3383e1c9-7c25-41aa-9304-47bd5bde07c9</UserSecretsId>
-=======
->>>>>>> d373b1145cc825f184dd583507a557a4aaf9a1f0
   </PropertyGroup>
 
   <ItemGroup>
@@ -24,10 +17,7 @@
   <ItemGroup>
     <PackageReference Include="FluentValidation" Version="12.1.1" />
     <PackageReference Include="FluentValidation.DependencyInjectionExtensions" Version="12.1.1" />
-<<<<<<< HEAD
     <PackageReference Include="Microsoft.AspNetCore.Authentication.Google" Version="8.0.26" />
-=======
->>>>>>> d373b1145cc825f184dd583507a557a4aaf9a1f0
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.26" />
     <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="8.0.26" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.26">

@@ -6,10 +6,7 @@ using FluentValidation;
 using Infrastructure.Context;
 using Infrastructure.Repositories;
 using Infrastructure.Repositories.Base;
-<<<<<<< HEAD
 using Microsoft.AspNetCore.Authentication.Google;
-=======
->>>>>>> d373b1145cc825f184dd583507a557a4aaf9a1f0
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -80,7 +77,6 @@ builder.Services.AddAuthentication(options =>
             }
         }
     };
-<<<<<<< HEAD
 })
 .AddGoogle(options =>
 {
@@ -102,11 +98,6 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("CanViewBookings", policy => policy.RequireRole("Student", "LandLord"));
     options.AddPolicy("RequireAdminRole", policy => policy.RequireRole("Admin"));
 });
-=======
-});
-
-builder.Services.AddAuthorization();
->>>>>>> d373b1145cc825f184dd583507a557a4aaf9a1f0
 
 // Register Repositories
 builder.Services.AddScoped<IBookingRepository, BookingRepository>();
@@ -124,10 +115,7 @@ builder.Services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
 // Register Services
 builder.Services.AddScoped<ITokenService, TokenService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
-<<<<<<< HEAD
 builder.Services.AddScoped<ITwoFactorAuthService, TwoFactorAuthService>();
-=======
->>>>>>> d373b1145cc825f184dd583507a557a4aaf9a1f0
 builder.Services.AddScoped<IStudentService, StudentService>();
 builder.Services.AddScoped<ILandLordService, LandLordService>();
 builder.Services.AddScoped<IHousingUnitService, HousingUnitService>();

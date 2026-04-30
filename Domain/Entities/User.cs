@@ -14,11 +14,8 @@ namespace Domain.Entities
         public string? ProfileImage { get; set; }
         public string? GoogleId { get; set; }
         public bool IsGoogleUser { get; set; }
-<<<<<<< HEAD
         public bool TwoFactorEnabled { get; set; }
         public string? TwoFactorSecret { get; set; }
-=======
->>>>>>> d373b1145cc825f184dd583507a557a4aaf9a1f0
         public virtual List<Notification> Notifications { get; set; } = null!;
     }
 }
