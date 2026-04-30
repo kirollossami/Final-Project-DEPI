@@ -1,6 +1,7 @@
 ﻿using Business.DTOs.Requests;
 using Business.DTOs.Responses;
 using Business.Interfaces;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace StudentHousingAPI.Controllers;
@@ -67,6 +68,11 @@ public class AccountController : Controller
     [HttpPost("logout")]
     public async Task<IActionResult> Logout([FromBody] string token)
     {
+        if (string.IsNullOrEmpty(token))
+        {
+            return BadRequest(new ApiResponse<string> { Success = false, Message = "Token is required" });
+        }
+
         var success = await authService.LogoutAsync(token);
 
         if (!success)
