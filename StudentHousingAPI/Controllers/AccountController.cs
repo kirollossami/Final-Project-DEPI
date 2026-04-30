@@ -1,7 +1,10 @@
 ﻿using Business.DTOs.Requests;
 using Business.DTOs.Responses;
 using Business.Interfaces;
+<<<<<<< HEAD
 using Microsoft.AspNetCore.Authentication;
+=======
+>>>>>>> d373b1145cc825f184dd583507a557a4aaf9a1f0
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -30,6 +33,7 @@ public class AccountController : Controller
         return Ok(response);
     }
 
+<<<<<<< HEAD
     [HttpGet("google-challenge")]
     public IActionResult GoogleChallenge()
     {
@@ -96,6 +100,8 @@ public class AccountController : Controller
         return Ok(response);
     }
 
+=======
+>>>>>>> d373b1145cc825f184dd583507a557a4aaf9a1f0
     [HttpPost("register/student")]
     [ProducesResponseType(typeof(AuthResponse), StatusCodes.Status200OK)]
     public async Task<IActionResult> RegisterStudent(StudentRegisterRequest request)
@@ -147,6 +153,7 @@ public class AccountController : Controller
 
         return Ok(new ApiResponse<string> { Success = true, Message = "Logged out successfully" });
     }
+<<<<<<< HEAD
 
     [HttpPost("2fa/setup")]
     [ProducesResponseType(typeof(TwoFactorSetupResponse), StatusCodes.Status200OK)]
@@ -188,4 +195,6 @@ public class AccountController : Controller
 
         return Ok(response);
     }
+=======
+>>>>>>> d373b1145cc825f184dd583507a557a4aaf9a1f0
 }

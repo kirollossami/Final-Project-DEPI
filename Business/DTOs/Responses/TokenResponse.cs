@@ -20,6 +20,7 @@ public class AuthResponse
     public string? Message { get; set; }
     public TokenResponse? Token { get; set; }
     public UserResponse? User { get; set; }
+<<<<<<< HEAD
     public bool RequiresTwoFactor { get; set; }
 }
 
@@ -32,6 +33,8 @@ public class TwoFactorSetupResponse
     public string? Message { get; set; }
     public string? Secret { get; set; }
     public string? QrCodeUri { get; set; }
+=======
+>>>>>>> d373b1145cc825f184dd583507a557a4aaf9a1f0
 }
 
 /// <summary>

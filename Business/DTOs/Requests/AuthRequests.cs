@@ -26,6 +26,7 @@ public class GoogleLoginRequest
 }
 
 /// <summary>
+<<<<<<< HEAD
 /// Request model for 2FA verification
 /// </summary>
 public class TwoFactorVerifyRequest
@@ -50,6 +51,8 @@ public class EnableTwoFactorRequest
 }
 
 /// <summary>
+=======
+>>>>>>> d373b1145cc825f184dd583507a557a4aaf9a1f0
 /// Request model for refreshing JWT token
 /// </summary>
 public class RefreshTokenRequest
