@@ -16,17 +16,23 @@ public class AuthService : IAuthService
     private readonly ITokenService _tokenService;
     private readonly IStudentRepository _studentRepository;
     private readonly ILandLordRepository _landLordRepository;
+    private readonly IRefreshTokenRepository _refreshTokenRepository;
+    private readonly ITokenBlacklistService _tokenBlacklistService;
 
     public AuthService(
         UserManager<User> userManager,
         ITokenService tokenService,
         IStudentRepository studentRepository,
-        ILandLordRepository landLordRepository)
+        ILandLordRepository landLordRepository,
+        IRefreshTokenRepository refreshTokenRepository,
+        ITokenBlacklistService tokenBlacklistService)
     {
         _userManager = userManager;
         _tokenService = tokenService;
         _studentRepository = studentRepository;
         _landLordRepository = landLordRepository;
+        _refreshTokenRepository = refreshTokenRepository;
+        _tokenBlacklistService = tokenBlacklistService;
     }
 
     public async Task<AuthResponse> LoginAsync(LoginRequest request)
@@ -56,6 +62,18 @@ public class AuthService : IAuthService
 
         var student = await _studentRepository.GetAll().FirstOrDefaultAsync(s => s.UserId == user.Id);
         var landlord = await _landLordRepository.GetAll().FirstOrDefaultAsync(l => l.UserId == user.Id);
+
+        var refreshTokenEntity = new Domain.Entities.RefreshToken
+        {
+            Token = refreshToken,
+            UserId = user.Id,
+            IsRevoked = false,
+            ExpiryDate = DateTime.UtcNow.AddDays(7),
+            CreatedAt = DateTime.UtcNow
+        };
+
+        await _refreshTokenRepository.Insert(refreshTokenEntity);
+        await _refreshTokenRepository.CommitAsync();
 
         return new AuthResponse
         {
@@ -143,6 +161,18 @@ public class AuthService : IAuthService
         var accessToken = _tokenService.GenerateAccessToken(user, roles);
         var refreshToken = _tokenService.GenerateRefreshToken();
 
+        var refreshTokenEntity = new Domain.Entities.RefreshToken
+        {
+            Token = refreshToken,
+            UserId = user.Id,
+            IsRevoked = false,
+            ExpiryDate = DateTime.UtcNow.AddDays(7),
+            CreatedAt = DateTime.UtcNow
+        };
+
+        await _refreshTokenRepository.Insert(refreshTokenEntity);
+        await _refreshTokenRepository.CommitAsync();
+
         return new AuthResponse
         {
             Success = true,
@@ -226,6 +256,18 @@ public class AuthService : IAuthService
         var accessToken = _tokenService.GenerateAccessToken(user, roles);
         var refreshToken = _tokenService.GenerateRefreshToken();
 
+        var refreshTokenEntity = new Domain.Entities.RefreshToken
+        {
+            Token = refreshToken,
+            UserId = user.Id,
+            IsRevoked = false,
+            ExpiryDate = DateTime.UtcNow.AddDays(7),
+            CreatedAt = DateTime.UtcNow
+        };
+
+        await _refreshTokenRepository.Insert(refreshTokenEntity);
+        await _refreshTokenRepository.CommitAsync();
+
         return new AuthResponse
         {
             Success = true,
@@ -248,6 +290,25 @@ public class AuthService : IAuthService
 
     public async Task<AuthResponse> RefreshTokenAsync(RefreshTokenRequest request)
     {
+        if (string.IsNullOrEmpty(request.RefreshToken))
+        {
+            return new AuthResponse
+            {
+                Success = false,
+                Message = "Refresh token is required"
+            };
+        }
+
+        var storedRefreshToken = await _refreshTokenRepository.GetValidTokenAsync(request.RefreshToken);
+        if (storedRefreshToken == null)
+        {
+            return new AuthResponse
+            {
+                Success = false,
+                Message = "Invalid or expired refresh token"
+            };
+        }
+
         var principal = _tokenService.GetPrincipalFromExpiredToken(request.Token);
         var userId = principal?.FindFirst("UserId")?.Value;
 
@@ -257,6 +318,15 @@ public class AuthService : IAuthService
             {
                 Success = false,
                 Message = ErrorMessageHelper.InvalidToken
+            };
+        }
+
+        if (storedRefreshToken.UserId != userId)
+        {
+            return new AuthResponse
+            {
+                Success = false,
+                Message = "Refresh token does not belong to this user"
             };
         }
 
@@ -270,9 +340,26 @@ public class AuthService : IAuthService
             };
         }
 
+        storedRefreshToken.IsRevoked = true;
+        storedRefreshToken.RevokedAt = DateTime.UtcNow;
+        await _refreshTokenRepository.Update(storedRefreshToken);
+        await _refreshTokenRepository.CommitAsync();
+
         var roles = await _userManager.GetRolesAsync(user);
         var accessToken = _tokenService.GenerateAccessToken(user, roles);
-        var refreshToken = _tokenService.GenerateRefreshToken();
+        var newRefreshToken = _tokenService.GenerateRefreshToken();
+
+        var newRefreshTokenEntity = new Domain.Entities.RefreshToken
+        {
+            Token = newRefreshToken,
+            UserId = user.Id,
+            IsRevoked = false,
+            ExpiryDate = DateTime.UtcNow.AddDays(7),
+            CreatedAt = DateTime.UtcNow
+        };
+
+        await _refreshTokenRepository.Insert(newRefreshTokenEntity);
+        await _refreshTokenRepository.CommitAsync();
 
         return new AuthResponse
         {
@@ -281,16 +368,49 @@ public class AuthService : IAuthService
             Token = new TokenResponse
             {
                 AccessToken = accessToken,
-                RefreshToken = refreshToken
+                RefreshToken = newRefreshToken
             }
         };
     }
 
     public async Task<bool> LogoutAsync(string token)
     {
-        // In a real implementation, you would add the token to a blacklist
-        // For now, we'll just return true
-        await Task.CompletedTask;
-        return true;
+        if (string.IsNullOrEmpty(token))
+        {
+            return false;
+        }
+
+        if (_tokenBlacklistService.IsTokenBlacklisted(token))
+        {
+            return false;
+        }
+
+        try
+        {
+            var principal = _tokenService.GetPrincipalFromExpiredToken(token);
+            var userId = principal?.FindFirst("UserId")?.Value;
+
+            if (string.IsNullOrEmpty(userId))
+            {
+                return false;
+            }
+
+            var user = await _userManager.FindByIdAsync(userId);
+            if (user == null)
+            {
+                return false;
+            }
+
+            _tokenBlacklistService.BlacklistToken(token);
+
+            await _refreshTokenRepository.RevokeAllUserTokensAsync(userId);
+            await _refreshTokenRepository.CommitAsync();
+
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
     }
 }
