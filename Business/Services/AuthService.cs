@@ -21,7 +21,10 @@ public class AuthService : IAuthService
     private readonly IRefreshTokenRepository _refreshTokenRepository;
     private readonly ITokenBlacklistService _tokenBlacklistService;
     private readonly IConfiguration _configuration;
+<<<<<<< HEAD
     private readonly ITwoFactorAuthService _twoFactorAuthService;
+=======
+>>>>>>> d373b1145cc825f184dd583507a557a4aaf9a1f0
 
     public AuthService(
         UserManager<User> userManager,
@@ -30,8 +33,12 @@ public class AuthService : IAuthService
         ILandLordRepository landLordRepository,
         IRefreshTokenRepository refreshTokenRepository,
         ITokenBlacklistService tokenBlacklistService,
+<<<<<<< HEAD
         IConfiguration configuration,
         ITwoFactorAuthService twoFactorAuthService)
+=======
+        IConfiguration configuration)
+>>>>>>> d373b1145cc825f184dd583507a557a4aaf9a1f0
     {
         _userManager = userManager;
         _tokenService = tokenService;
@@ -40,7 +47,10 @@ public class AuthService : IAuthService
         _refreshTokenRepository = refreshTokenRepository;
         _tokenBlacklistService = tokenBlacklistService;
         _configuration = configuration;
+<<<<<<< HEAD
         _twoFactorAuthService = twoFactorAuthService;
+=======
+>>>>>>> d373b1145cc825f184dd583507a557a4aaf9a1f0
     }
 
     public async Task<AuthResponse> LoginAsync(LoginRequest request)
@@ -540,6 +550,7 @@ public class AuthService : IAuthService
                 }
             }
 
+<<<<<<< HEAD
             // Check if user has 2FA enabled
             if (user.TwoFactorEnabled)
             {
@@ -558,6 +569,8 @@ public class AuthService : IAuthService
                 };
             }
 
+=======
+>>>>>>> d373b1145cc825f184dd583507a557a4aaf9a1f0
             var roles = await _userManager.GetRolesAsync(user);
             var accessToken = _tokenService.GenerateAccessToken(user, roles);
             var refreshToken = _tokenService.GenerateRefreshToken();
@@ -628,6 +641,7 @@ public class AuthService : IAuthService
             };
         }
     }
+<<<<<<< HEAD
 
     public async Task<TwoFactorSetupResponse> SetupTwoFactorAsync(string email)
     {
@@ -796,4 +810,6 @@ public class AuthService : IAuthService
             }
         };
     }
+=======
+>>>>>>> d373b1145cc825f184dd583507a557a4aaf9a1f0
 }

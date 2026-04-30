@@ -275,6 +275,7 @@ namespace Infrastructure.Migrations
                     b.ToTable("Payments");
                 });
 
+<<<<<<< HEAD
             modelBuilder.Entity("Domain.Entities.RefreshToken", b =>
                 {
                     b.Property<int>("Id")
@@ -308,6 +309,8 @@ namespace Infrastructure.Migrations
                     b.ToTable("RefreshTokens");
                 });
 
+=======
+>>>>>>> d373b1145cc825f184dd583507a557a4aaf9a1f0
             modelBuilder.Entity("Domain.Entities.Review", b =>
                 {
                     b.Property<Guid>("ReviewId")
@@ -395,9 +398,12 @@ namespace Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+<<<<<<< HEAD
                     b.Property<bool>("IsOnboardingComplete")
                         .HasColumnType("bit");
 
+=======
+>>>>>>> d373b1145cc825f184dd583507a557a4aaf9a1f0
                     b.Property<string>("NationalId")
                         .IsRequired()
                         .HasMaxLength(20)
@@ -437,18 +443,24 @@ namespace Infrastructure.Migrations
                     b.Property<bool>("EmailConfirmed")
                         .HasColumnType("bit");
 
+<<<<<<< HEAD
                     b.Property<string>("GoogleId")
                         .HasColumnType("nvarchar(max)");
 
+=======
+>>>>>>> d373b1145cc825f184dd583507a557a4aaf9a1f0
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
 
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
 
+<<<<<<< HEAD
                     b.Property<bool>("IsGoogleUser")
                         .HasColumnType("bit");
 
+=======
+>>>>>>> d373b1145cc825f184dd583507a557a4aaf9a1f0
                     b.Property<bool>("LockoutEnabled")
                         .HasColumnType("bit");
 
@@ -482,9 +494,12 @@ namespace Infrastructure.Migrations
                     b.Property<bool>("TwoFactorEnabled")
                         .HasColumnType("bit");
 
+<<<<<<< HEAD
                     b.Property<string>("TwoFactorSecret")
                         .HasColumnType("nvarchar(max)");
 
+=======
+>>>>>>> d373b1145cc825f184dd583507a557a4aaf9a1f0
                     b.Property<string>("UserName")
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
