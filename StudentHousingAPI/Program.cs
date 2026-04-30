@@ -62,6 +62,20 @@ builder.Services.AddAuthentication(options =>
         ValidAudience = jwtSettings.Audience,
         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings.SecretKey))
     };
+
+    options.Events = new JwtBearerEvents
+    {
+        OnTokenValidated = async context =>
+        {
+            var tokenBlacklistService = context.HttpContext.RequestServices.GetRequiredService<ITokenBlacklistService>();
+            var token = context.Request.Headers["Authorization"].ToString().Replace("Bearer ", "");
+            
+            if (tokenBlacklistService.IsTokenBlacklisted(token))
+            {
+                context.Fail("Token has been revoked");
+            }
+        }
+    };
 });
 
 builder.Services.AddAuthorization();
@@ -77,6 +91,7 @@ builder.Services.AddScoped<IReviewRepository, ReviewRepository>();
 builder.Services.AddScoped<IRoomRepository, RoomRepository>();
 builder.Services.AddScoped<IStudentRepository, StudentRepository>();
 builder.Services.AddScoped<IWishlistRepository, WishlistRepository>();
+builder.Services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
 
 // Register Services
 builder.Services.AddScoped<ITokenService, TokenService>();
@@ -91,6 +106,7 @@ builder.Services.AddScoped<IWishlistService, WishlistService>();
 builder.Services.AddScoped<IComplaintService, ComplaintService>();
 builder.Services.AddScoped<IPaymentService, PaymentService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
+builder.Services.AddSingleton<ITokenBlacklistService, TokenBlacklistService>();
 
 #region Validators
 builder.Services.AddValidatorsFromAssemblyContaining<LoginValidator>();
