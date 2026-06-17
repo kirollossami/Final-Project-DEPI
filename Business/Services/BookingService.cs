@@ -1,20 +1,32 @@
 using Business.DTOs.Requests;
 using Business.DTOs.Responses;
 using Business.Interfaces;
+using Business.Settings;
 using Domain.Entities;
 using Domain.Enums;
 using Infrastructure.Repositories;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace Business.Services;
 
 public class BookingService : IBookingService
 {
     private readonly IBookingRepository _bookingRepository;
+    private readonly ICommissionRecordRepository _commissionRecordRepository;
+    private readonly IStudentRepository _studentRepository;
+    private readonly CommissionSettings _commissionSettings;
 
-    public BookingService(IBookingRepository bookingRepository)
+    public BookingService(
+        IBookingRepository bookingRepository,
+        ICommissionRecordRepository commissionRecordRepository,
+        IStudentRepository studentRepository,
+        IOptions<CommissionSettings> commissionSettings)
     {
         _bookingRepository = bookingRepository;
+        _commissionRecordRepository = commissionRecordRepository;
+        _studentRepository = studentRepository;
+        _commissionSettings = commissionSettings.Value;
     }
 
     public async Task<BookingResponse?> GetBookingByIdAsync(Guid bookingId)
@@ -22,6 +34,7 @@ public class BookingService : IBookingService
         var booking = await _bookingRepository.GetAll()
             .Include(b => b.Student)
             .Include(b => b.Room)
+            .Include(b => b.CommissionRecord)
             .FirstOrDefaultAsync(b => b.BookingId == bookingId);
 
         if (booking == null) return null;
@@ -34,13 +47,16 @@ public class BookingService : IBookingService
             StartDate = booking.StartDate,
             EndDate = booking.EndDate,
             TotalPrice = booking.TotalPrice,
-            BookingStatus = booking.BookingStatus
+            BookingStatus = booking.BookingStatus,
+            CommissionAmount = booking.CommissionRecord?.Amount
         };
     }
 
     public async Task<BookingIndexedResponse> GetBookingsAsync(BookingFilterRequest filter)
     {
-        var query = _bookingRepository.GetAll().AsQueryable();
+        var query = _bookingRepository.GetAll()
+            .Include(b => b.CommissionRecord)
+            .AsQueryable();
 
         if (filter.StudentId.HasValue)
         {
@@ -73,11 +89,63 @@ public class BookingService : IBookingService
                 StartDate = b.StartDate,
                 EndDate = b.EndDate,
                 TotalPrice = b.TotalPrice,
-                BookingStatus = b.BookingStatus
+                BookingStatus = b.BookingStatus,
+                CommissionAmount = b.CommissionRecord?.Amount
             }).ToList(),
             TotalRecords = totalCount,
             PageIndex = filter.PageNumber - 1,
             PageSize = filter.PageSize
+        };
+    }
+
+    public async Task<BookingIndexedResponse> GetMyBookingsAsync(string userId, BookingStatus? statusFilter, int pageNumber = 1, int pageSize = 10)
+    {
+        var student = await _studentRepository.GetAll()
+            .FirstOrDefaultAsync(s => s.UserId == userId);
+
+        if (student == null)
+        {
+            return new BookingIndexedResponse
+            {
+                Records = new List<BookingResponse>(),
+                TotalRecords = 0,
+                PageIndex = pageNumber - 1,
+                PageSize = pageSize
+            };
+        }
+
+        var query = _bookingRepository.GetAll()
+            .Include(b => b.CommissionRecord)
+            .Where(b => b.StudentId == student.StudentId);
+
+        if (statusFilter.HasValue)
+        {
+            query = query.Where(b => b.BookingStatus == statusFilter.Value);
+        }
+
+        var totalCount = await query.CountAsync();
+        var bookings = await query
+            .Skip((pageNumber - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+
+        return new BookingIndexedResponse
+        {
+            Records = bookings.Select(b => new BookingResponse
+            {
+                BookingId = b.BookingId,
+                StudentId = b.StudentId,
+                RoomId = b.RoomId,
+                StartDate = b.StartDate,
+                EndDate = b.EndDate,
+                TotalPrice = b.TotalPrice,
+                BookingStatus = b.BookingStatus,
+                IsDeleted = b.IsDeleted,
+                CommissionAmount = b.CommissionRecord?.Amount
+            }).ToList(),
+            TotalRecords = totalCount,
+            PageIndex = pageNumber - 1,
+            PageSize = pageSize
         };
     }
 
@@ -110,6 +178,20 @@ public class BookingService : IBookingService
         await _bookingRepository.Insert(booking);
         await _bookingRepository.CommitAsync();
 
+        var commissionRate = _commissionSettings.GlobalRate;
+        var commissionAmount = totalPrice * commissionRate;
+
+        var commissionRecord = new CommissionRecord
+        {
+            CommissionRecordId = Guid.NewGuid(),
+            BookingId = booking.BookingId,
+            Rate = commissionRate,
+            Amount = commissionAmount
+        };
+
+        await _commissionRecordRepository.Insert(commissionRecord);
+        await _commissionRecordRepository.CommitAsync();
+
         return new BookingResponse
         {
             BookingId = booking.BookingId,
@@ -118,13 +200,16 @@ public class BookingService : IBookingService
             StartDate = booking.StartDate,
             EndDate = booking.EndDate,
             TotalPrice = booking.TotalPrice,
-            BookingStatus = booking.BookingStatus
+            BookingStatus = booking.BookingStatus,
+            CommissionAmount = commissionAmount
         };
     }
 
     public async Task<BookingResponse?> UpdateBookingAsync(BookingUpdateRequest request)
     {
-        var booking = await _bookingRepository.GetAsync(request.BookingId);
+        var booking = await _bookingRepository.GetAll()
+            .Include(b => b.CommissionRecord)
+            .FirstOrDefaultAsync(b => b.BookingId == request.BookingId);
         if (booking == null) return null;
 
         if (request.StartDate.HasValue)
@@ -153,7 +238,8 @@ public class BookingService : IBookingService
             StartDate = booking.StartDate,
             EndDate = booking.EndDate,
             TotalPrice = booking.TotalPrice,
-            BookingStatus = booking.BookingStatus
+            BookingStatus = booking.BookingStatus,
+            CommissionAmount = booking.CommissionRecord?.Amount
         };
     }
 
