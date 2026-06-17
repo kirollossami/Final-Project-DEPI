@@ -27,6 +27,25 @@ public class StudentHousingDBContext : IdentityDbContext<User>
             new IdentityRole { Id = "2", Name = "Student", NormalizedName = "STUDENT" },
             new IdentityRole { Id = "3", Name = "LandLord", NormalizedName = "LANDLORD" }
         );
+
+        // Seed admin user
+        var adminUser = new User
+        {
+            Id = "admin-user-id-001",
+            UserName = "admin@studenthousing.com",
+            NormalizedUserName = "ADMIN@STUDENTHOUSING.COM",
+            Email = "admin@studenthousing.com",
+            NormalizedEmail = "ADMIN@STUDENTHOUSING.COM",
+            EmailConfirmed = true,
+            IsActive = true,
+            SecurityStamp = Guid.NewGuid().ToString()
+        };
+        adminUser.PasswordHash = new PasswordHasher<User>().HashPassword(adminUser, "Admin@123456");
+        modelBuilder.Entity<User>().HasData(adminUser);
+
+        modelBuilder.Entity<IdentityUserRole<string>>().HasData(
+            new IdentityUserRole<string> { UserId = "admin-user-id-001", RoleId = "1" }
+        );
     }
 
     public DbSet<Booking> Bookings { get; set; }
@@ -40,5 +59,6 @@ public class StudentHousingDBContext : IdentityDbContext<User>
     public DbSet<Room> Rooms { get; set; }
     public DbSet<Student> Students { get; set; }
     public DbSet<Wishlist> Wishlists { get; set; }
+    public DbSet<CommissionRecord> CommissionRecords { get; set; }
 
 }

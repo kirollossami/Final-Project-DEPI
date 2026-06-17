@@ -1,4 +1,5 @@
 using Domain.Entities;
+using Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -28,6 +29,23 @@ public class StudentConfiguration : IEntityTypeConfiguration<Student>
         builder.Property(s => s.NationalId)
             .HasMaxLength(20)
             .IsRequired();
+
+        builder.Property(s => s.FacultyName)
+            .HasMaxLength(100);
+
+        builder.Property(s => s.UniversityName)
+            .HasMaxLength(100);
+
+        builder.Property(s => s.UniversityEmail)
+            .HasMaxLength(150);
+
+        builder.Property(s => s.UniversityIdCardPath)
+            .HasMaxLength(500);
+
+        builder.Property(s => s.UniversityVerificationStatus)
+            .HasConversion<string>()
+            .HasMaxLength(20)
+            .HasDefaultValue(UniversityVerificationStatus.NotSubmitted);
 
         builder.HasOne(s => s.User)
             .WithMany()
