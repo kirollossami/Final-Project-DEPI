@@ -22,5 +22,12 @@ public static class ErrorMessageHelper
     public static string RegistrationSuccess => "Registration successful.";
     public static string InvalidToken => "Invalid token.";
     public static string TokenRefreshed => "Token refreshed successfully.";
+    public static string UserHasActiveBookings => "Cannot deactivate user with active bookings. Resolve the following bookings first: {0}";
+    public static string VerificationNotPending => "Verification can only be reviewed when status is Pending.";
+    public static string InvalidVerificationTransition => "Verification status can only be set to Approved or Rejected.";
+    public static string EmailConfirmationSent => "Email confirmation token generated. Use the token to confirm your email.";
+    public static string EmailAlreadyConfirmed => "Email is already confirmed.";
+    public static string EmailConfirmationSuccess => "Email confirmed successfully.";
+    public static string EmailConfirmationFailed => "Email confirmation failed. Invalid or expired token.";
 }
 
