@@ -10,6 +10,9 @@ public class ComplaintConfiguration : IEntityTypeConfiguration<Complaint>
     {
         builder.HasKey(c => c.ComplaintId);
 
+        builder.Property(c => c.Title)
+            .HasMaxLength(200);
+
         builder.Property(c => c.Description)
             .HasMaxLength(1000);
 

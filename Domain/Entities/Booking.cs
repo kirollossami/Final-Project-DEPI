@@ -1,4 +1,4 @@
-﻿using Domain.Enums;
+using Domain.Enums;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -21,5 +21,6 @@ namespace Domain.Entities
         public virtual Student? Student { get; set; }
         public virtual Room? Room { get; set; }
         public virtual Payment? Payment { get; set; }
+        public virtual CommissionRecord? CommissionRecord { get; set; }
     }
 }
