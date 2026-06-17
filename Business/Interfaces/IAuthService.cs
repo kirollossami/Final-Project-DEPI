@@ -10,4 +10,8 @@ public interface IAuthService
     Task<AuthResponse> RegisterLandLordAsync(LandLordRegisterRequest request);
     Task<AuthResponse> RefreshTokenAsync(RefreshTokenRequest request);
     Task<bool> LogoutAsync(string token);
+    Task<AuthResponse> GoogleLoginAsync(GoogleLoginRequest request);
+    Task<TwoFactorSetupResponse> SetupTwoFactorAsync(string email);
+    Task<AuthResponse> EnableTwoFactorAsync(EnableTwoFactorRequest request);
+    Task<AuthResponse> VerifyTwoFactorAsync(TwoFactorVerifyRequest request);
 }

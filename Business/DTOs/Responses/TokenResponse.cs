@@ -20,6 +20,18 @@ public class AuthResponse
     public string? Message { get; set; }
     public TokenResponse? Token { get; set; }
     public UserResponse? User { get; set; }
+    public bool RequiresTwoFactor { get; set; }
+}
+
+/// <summary>
+/// 2FA setup response model
+/// </summary>
+public class TwoFactorSetupResponse
+{
+    public bool Success { get; set; }
+    public string? Message { get; set; }
+    public string? Secret { get; set; }
+    public string? QrCodeUri { get; set; }
 }
 
 /// <summary>

@@ -35,6 +35,7 @@ public class StudentHousingDBContext : IdentityDbContext<User>
     public DbSet<LandLord> LandLords { get; set; }
     public DbSet<Notification> Notifications { get; set; }
     public DbSet<Payment> Payments { get; set; }
+    public DbSet<RefreshToken> RefreshTokens { get; set; }
     public DbSet<Review> Reviews { get; set; }
     public DbSet<Room> Rooms { get; set; }
     public DbSet<Student> Students { get; set; }
