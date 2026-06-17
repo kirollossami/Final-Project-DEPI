@@ -14,4 +14,6 @@ public interface IAuthService
     Task<TwoFactorSetupResponse> SetupTwoFactorAsync(string email);
     Task<AuthResponse> EnableTwoFactorAsync(EnableTwoFactorRequest request);
     Task<AuthResponse> VerifyTwoFactorAsync(TwoFactorVerifyRequest request);
+    Task<AuthResponse> SendEmailConfirmationAsync(string userId);
+    Task<AuthResponse> ConfirmEmailAsync(string userId, string token);
 }
