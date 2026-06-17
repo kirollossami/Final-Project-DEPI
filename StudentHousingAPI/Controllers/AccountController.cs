@@ -148,6 +148,31 @@ public class AccountController : Controller
         return Ok(new ApiResponse<string> { Success = true, Message = "Logged out successfully" });
     }
 
+    [HttpPost("send-email-confirmation")]
+    [Authorize]
+    public async Task<IActionResult> SendEmailConfirmation()
+    {
+        var userId = User.FindFirst("UserId")?.Value;
+        if (string.IsNullOrEmpty(userId))
+            return Unauthorized();
+
+        var result = await authService.SendEmailConfirmationAsync(userId);
+        if (!result.Success)
+            return BadRequest(result);
+        return Ok(result);
+    }
+
+    [HttpGet("confirm-email")]
+    [AllowAnonymous]
+    public async Task<IActionResult> ConfirmEmail(
+        [FromQuery] string userId, [FromQuery] string token)
+    {
+        var result = await authService.ConfirmEmailAsync(userId, token);
+        if (!result.Success)
+            return BadRequest(result);
+        return Ok(result);
+    }
+
     [HttpPost("2fa/setup")]
     [ProducesResponseType(typeof(TwoFactorSetupResponse), StatusCodes.Status200OK)]
     public async Task<IActionResult> SetupTwoFactor([FromBody] string email)
