@@ -17,6 +17,39 @@ public class LoginRequest
 }
 
 /// <summary>
+/// Request model for Google OAuth login
+/// </summary>
+public class GoogleLoginRequest
+{
+    [Required]
+    public string? IdToken { get; set; }
+}
+
+/// <summary>
+/// Request model for 2FA verification
+/// </summary>
+public class TwoFactorVerifyRequest
+{
+    [Required]
+    public string? Email { get; set; }
+
+    [Required]
+    public string? Code { get; set; }
+}
+
+/// <summary>
+/// Request model for enabling 2FA
+/// </summary>
+public class EnableTwoFactorRequest
+{
+    [Required]
+    public string? Email { get; set; }
+
+    [Required]
+    public string? Code { get; set; }
+}
+
+/// <summary>
 /// Request model for refreshing JWT token
 /// </summary>
 public class RefreshTokenRequest

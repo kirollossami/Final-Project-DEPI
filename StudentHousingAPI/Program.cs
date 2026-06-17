@@ -6,6 +6,7 @@ using FluentValidation;
 using Infrastructure.Context;
 using Infrastructure.Repositories;
 using Infrastructure.Repositories.Base;
+using Microsoft.AspNetCore.Authentication.Google;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -62,9 +63,41 @@ builder.Services.AddAuthentication(options =>
         ValidAudience = jwtSettings.Audience,
         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings.SecretKey))
     };
+
+    options.Events = new JwtBearerEvents
+    {
+        OnTokenValidated = async context =>
+        {
+            var tokenBlacklistService = context.HttpContext.RequestServices.GetRequiredService<ITokenBlacklistService>();
+            var token = context.Request.Headers["Authorization"].ToString().Replace("Bearer ", "");
+            
+            if (tokenBlacklistService.IsTokenBlacklisted(token))
+            {
+                context.Fail("Token has been revoked");
+            }
+        }
+    };
+})
+.AddGoogle(options =>
+{
+    var googleClientId = builder.Configuration["Authentication:Google:ClientId"];
+    var googleClientSecret = builder.Configuration["Authentication:Google:ClientSecret"];
+    
+    if (!string.IsNullOrEmpty(googleClientId) && !string.IsNullOrEmpty(googleClientSecret))
+    {
+        options.ClientId = googleClientId;
+        options.ClientSecret = googleClientSecret;
+    }
 });
 
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("RequireManagerRole", policy => policy.RequireRole("LandLord"));
+    options.AddPolicy("RequireStudentRole", policy => policy.RequireRole("Student"));
+    options.AddPolicy("CanManageProperties", policy => policy.RequireRole("LandLord"));
+    options.AddPolicy("CanViewBookings", policy => policy.RequireRole("Student", "LandLord"));
+    options.AddPolicy("RequireAdminRole", policy => policy.RequireRole("Admin"));
+});
 
 // Register Repositories
 builder.Services.AddScoped<IBookingRepository, BookingRepository>();
@@ -77,10 +110,12 @@ builder.Services.AddScoped<IReviewRepository, ReviewRepository>();
 builder.Services.AddScoped<IRoomRepository, RoomRepository>();
 builder.Services.AddScoped<IStudentRepository, StudentRepository>();
 builder.Services.AddScoped<IWishlistRepository, WishlistRepository>();
+builder.Services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
 
 // Register Services
 builder.Services.AddScoped<ITokenService, TokenService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<ITwoFactorAuthService, TwoFactorAuthService>();
 builder.Services.AddScoped<IStudentService, StudentService>();
 builder.Services.AddScoped<ILandLordService, LandLordService>();
 builder.Services.AddScoped<IHousingUnitService, HousingUnitService>();
@@ -91,6 +126,7 @@ builder.Services.AddScoped<IWishlistService, WishlistService>();
 builder.Services.AddScoped<IComplaintService, ComplaintService>();
 builder.Services.AddScoped<IPaymentService, PaymentService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
+builder.Services.AddSingleton<ITokenBlacklistService, TokenBlacklistService>();
 
 #region Validators
 builder.Services.AddValidatorsFromAssemblyContaining<LoginValidator>();
