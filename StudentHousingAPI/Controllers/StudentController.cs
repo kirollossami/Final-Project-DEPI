@@ -1,19 +1,26 @@
 ﻿using Business.DTOs.Requests;
 using Business.DTOs.Responses;
 using Business.Interfaces;
+using Domain.Enums;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace StudentHousingAPI.Controllers;
 
 [ApiController]
 [Route("api/v1/[controller]")]
-public class StudentController : Controller
+[Authorize]
+public class StudentController : BaseController
 {
     private readonly IStudentService studentService;
+    private readonly IBookingService bookingService;
 
-    public StudentController(IStudentService studentService)
+    public StudentController(
+        IStudentService studentService,
+        IBookingService bookingService)
     {
         this.studentService = studentService;
+        this.bookingService = bookingService;
     }
 
     #region manipulation
@@ -113,5 +120,35 @@ public class StudentController : Controller
     }
     #endregion
 
+    [HttpPost("SubmitUniversityVerification")]
+    public async Task<IActionResult> SubmitUniversityVerification(
+        [FromForm] SubmitUniversityVerificationRequest request,
+        IFormFile universityIdCard)
+    {
+        if (universityIdCard == null || universityIdCard.Length == 0)
+            return BadRequest(new { Message = "University ID card file is required." });
+
+        var userId = GetLoggedId();
+
+        var result = await studentService.SubmitUniversityVerificationAsync(
+            userId, request, universityIdCard.OpenReadStream(), universityIdCard.FileName);
+
+        if (result == null)
+            return BadRequest(new { Message = "Invalid file type. Only JPEG and PNG files are allowed, max 5MB." });
+
+        return Ok(result);
+    }
+
+    [HttpGet("MyBookings")]
+    public async Task<IActionResult> GetMyBookings(
+        [FromQuery] BookingStatus? status,
+        [FromQuery] int pageNumber = 1,
+        [FromQuery] int pageSize = 10)
+    {
+        var userId = GetLoggedId();
+        var result = await bookingService.GetMyBookingsAsync(
+            userId, status, pageNumber, pageSize);
+        return Ok(result);
+    }
 }
 

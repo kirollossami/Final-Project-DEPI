@@ -15,4 +15,6 @@ public interface IStudentService
     Task<bool> DeactivateStudentAsync(Guid studentId);
     Task<bool> ReactivateStudentAsync(Guid studentId);
     Task<bool> ValidateNationalIdAsync(string nationalId);
+    Task<StudentResponse?> SubmitUniversityVerificationAsync(string userId, SubmitUniversityVerificationRequest request, Stream fileStream, string fileName);
+    Task<string?> GetUniversityIdCardPathAsync(Guid studentId);
 }

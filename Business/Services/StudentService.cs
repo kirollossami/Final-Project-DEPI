@@ -2,6 +2,7 @@ using Business.DTOs.Requests;
 using Business.DTOs.Responses;
 using Business.Interfaces;
 using Domain.Entities;
+using Domain.Enums;
 using Infrastructure.Repositories;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -11,11 +12,16 @@ namespace Business.Services;
 public class StudentService : IStudentService
 {
     private readonly IStudentRepository _studentRepository;
+    private readonly IFileStorageService _fileStorageService;
     private readonly UserManager<User> _userManager;
 
-    public StudentService(IStudentRepository studentRepository, UserManager<User> userManager)
+    public StudentService(
+        IStudentRepository studentRepository,
+        IFileStorageService fileStorageService,
+        UserManager<User> userManager)
     {
         _studentRepository = studentRepository;
+        _fileStorageService = fileStorageService;
         _userManager = userManager;
     }
 
@@ -36,7 +42,11 @@ public class StudentService : IStudentService
             Address = student.Address,
             City = student.City,
             PreferredArea = student.PreferredArea,
-            NationalId = student.NationalId
+            NationalId = student.NationalId,
+            FacultyName = student.FacultyName,
+            UniversityName = student.UniversityName,
+            UniversityEmail = student.UniversityEmail,
+            UniversityVerificationStatus = student.UniversityVerificationStatus
         };
     }
 
@@ -71,7 +81,11 @@ public class StudentService : IStudentService
                 Address = s.Address,
                 City = s.City,
                 PreferredArea = s.PreferredArea,
-                NationalId = s.NationalId
+                NationalId = s.NationalId,
+                FacultyName = s.FacultyName,
+                UniversityName = s.UniversityName,
+                UniversityEmail = s.UniversityEmail,
+                UniversityVerificationStatus = s.UniversityVerificationStatus
             }).ToList(),
             TotalRecords = totalCount,
             PageIndex = filter.PageNumber - 1,
@@ -140,7 +154,11 @@ public class StudentService : IStudentService
             Address = student.Address,
             City = student.City,
             PreferredArea = student.PreferredArea,
-            NationalId = student.NationalId
+            NationalId = student.NationalId,
+            FacultyName = student.FacultyName,
+            UniversityName = student.UniversityName,
+            UniversityEmail = student.UniversityEmail,
+            UniversityVerificationStatus = student.UniversityVerificationStatus
         };
     }
 
@@ -195,7 +213,11 @@ public class StudentService : IStudentService
             Address = student.Address,
             City = student.City,
             PreferredArea = student.PreferredArea,
-            NationalId = student.NationalId
+            NationalId = student.NationalId,
+            FacultyName = student.FacultyName,
+            UniversityName = student.UniversityName,
+            UniversityEmail = student.UniversityEmail,
+            UniversityVerificationStatus = student.UniversityVerificationStatus
         };
     }
 
@@ -233,5 +255,56 @@ public class StudentService : IStudentService
             .FirstOrDefaultAsync(s => s.NationalId == nationalId);
         
         return existingStudent == null;
+    }
+
+    public async Task<string?> GetUniversityIdCardPathAsync(Guid studentId)
+    {
+        var student = await _studentRepository.GetAll()
+            .FirstOrDefaultAsync(s => s.StudentId == studentId);
+        return student?.UniversityIdCardPath;
+    }
+
+    public async Task<StudentResponse?> SubmitUniversityVerificationAsync(string userId, SubmitUniversityVerificationRequest request, Stream fileStream, string fileName)
+    {
+        var student = await _studentRepository.GetAll()
+            .Include(s => s.User)
+            .FirstOrDefaultAsync(s => s.UserId == userId);
+
+        if (student == null) return null;
+
+        var extension = Path.GetExtension(fileName).ToLowerInvariant();
+        var allowedExtensions = new[] { ".jpg", ".jpeg", ".png" };
+        if (!allowedExtensions.Contains(extension))
+            return null;
+
+        var savedPath = await _fileStorageService.SaveFileAsync(
+            fileStream,
+            $"{student.StudentId}_{Guid.NewGuid()}{extension}",
+            "university-ids");
+
+        student.FacultyName = request.FacultyName;
+        student.UniversityName = request.UniversityName;
+        student.UniversityEmail = request.UniversityEmail;
+        student.UniversityIdCardPath = savedPath;
+        student.UniversityVerificationStatus = UniversityVerificationStatus.Pending;
+
+        await _studentRepository.Update(student);
+        await _studentRepository.CommitAsync();
+
+        return new StudentResponse
+        {
+            StudentId = student.StudentId,
+            UserId = student.UserId,
+            DateOfBirth = student.DateOfBirth,
+            Gender = student.Gender,
+            Address = student.Address,
+            City = student.City,
+            PreferredArea = student.PreferredArea,
+            NationalId = student.NationalId,
+            FacultyName = student.FacultyName,
+            UniversityName = student.UniversityName,
+            UniversityEmail = student.UniversityEmail,
+            UniversityVerificationStatus = student.UniversityVerificationStatus
+        };
     }
 }
