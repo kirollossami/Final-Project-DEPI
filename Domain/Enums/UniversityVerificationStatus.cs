@@ -6,10 +6,11 @@ using System.Threading.Tasks;
 
 namespace Domain.Enums
 {
-    public enum ComplaintStatus
+    public enum UniversityVerificationStatus
     {
-        Open,
-        InInvestigation,
-        Resolved
+        NotSubmitted,
+        Pending,
+        Approved,
+        Rejected
     }
 }

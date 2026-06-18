@@ -55,6 +55,17 @@ public class StudentFilterRequest
 }
 
 /// <summary>
+/// Request model for submitting university verification.
+/// Note: IFormFile is handled at the controller level, NOT here.
+/// </summary>
+public class SubmitUniversityVerificationRequest
+{
+    public string? FacultyName { get; set; }
+    public string UniversityName { get; set; }
+    public string UniversityEmail { get; set; }
+}
+
+/// <summary>
 /// Request model for student password change
 /// </summary>
 public class ChangePasswordRequest

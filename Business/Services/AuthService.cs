@@ -796,4 +796,92 @@ public class AuthService : IAuthService
             }
         };
     }
+
+    public async Task<AuthResponse> SendEmailConfirmationAsync(string userId)
+    {
+        if (string.IsNullOrEmpty(userId))
+        {
+            return new AuthResponse
+            {
+                Success = false,
+                Message = "UserId is required."
+            };
+        }
+
+        var user = await _userManager.FindByIdAsync(userId);
+        if (user == null)
+        {
+            return new AuthResponse
+            {
+                Success = false,
+                Message = ErrorMessageHelper.UserNotFound
+            };
+        }
+
+        if (user.EmailConfirmed)
+        {
+            return new AuthResponse
+            {
+                Success = false,
+                Message = ErrorMessageHelper.EmailAlreadyConfirmed
+            };
+        }
+
+        var token = await _userManager.GenerateEmailConfirmationTokenAsync(user);
+        var encodedToken = Uri.EscapeDataString(token);
+
+        return new AuthResponse
+        {
+            Success = true,
+            Message = $"{ErrorMessageHelper.EmailConfirmationSent} Use the token as a query parameter: /api/v1/Account/confirm-email?userId={Uri.EscapeDataString(userId)}&token={encodedToken}",
+            Token = new TokenResponse
+            {
+                AccessToken = encodedToken,
+                ExpiresIn = 86400
+            },
+            User = new UserResponse
+            {
+                Id = user.Id,
+                Email = user.Email
+            }
+        };
+    }
+
+    public async Task<AuthResponse> ConfirmEmailAsync(string userId, string token)
+    {
+        if (string.IsNullOrEmpty(userId) || string.IsNullOrEmpty(token))
+        {
+            return new AuthResponse
+            {
+                Success = false,
+                Message = "UserId and token are required."
+            };
+        }
+
+        var user = await _userManager.FindByIdAsync(userId);
+        if (user == null)
+        {
+            return new AuthResponse
+            {
+                Success = false,
+                Message = ErrorMessageHelper.UserNotFound
+            };
+        }
+
+        var result = await _userManager.ConfirmEmailAsync(user, token);
+        if (!result.Succeeded)
+        {
+            return new AuthResponse
+            {
+                Success = false,
+                Message = ErrorMessageHelper.EmailConfirmationFailed
+            };
+        }
+
+        return new AuthResponse
+        {
+            Success = true,
+            Message = ErrorMessageHelper.EmailConfirmationSuccess
+        };
+    }
 }

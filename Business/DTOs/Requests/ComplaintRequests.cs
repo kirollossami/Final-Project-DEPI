@@ -12,6 +12,7 @@ namespace Business.DTOs.Requests;
 /// </summary>
 public class ComplaintCreateRequest
 {
+    public string? Title { get; set; }
     public Guid StudentId { get; set; }
     public Guid LandLordId { get; set; }
     public string Description { get; set; }

@@ -1,4 +1,4 @@
-﻿using Domain.Enums;
+using Domain.Enums;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -18,6 +18,13 @@ namespace Domain.Entities
         public string? PreferredArea { get; set; }
         public string? NationalId { get; set; }
         public bool IsOnboardingComplete { get; set; } = true; // Default true for manual registration
+
+        // University Verification Fields
+        public string? FacultyName { get; set; }
+        public string? UniversityName { get; set; }
+        public string? UniversityEmail { get; set; }
+        public string? UniversityIdCardPath { get; set; }
+        public UniversityVerificationStatus UniversityVerificationStatus { get; set; } = UniversityVerificationStatus.NotSubmitted;
 
         public virtual User? User { get; set; }
         public virtual ICollection<Booking>? Bookings { get; set; }
