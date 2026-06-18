@@ -10,6 +10,7 @@ namespace Business.DTOs.Responses;
 public class ComplaintResponse
 {
     public Guid ComplaintId { get; set; }
+    public string? Title { get; set; }
     public Guid StudentId { get; set; }
     public Guid LandLordId { get; set; }
     public string Description { get; set; }

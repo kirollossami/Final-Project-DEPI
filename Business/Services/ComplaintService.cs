@@ -25,6 +25,7 @@ public class ComplaintService : IComplaintService
         return new ComplaintResponse
         {
             ComplaintId = complaint.ComplaintId,
+            Title = complaint.Title,
             StudentId = complaint.StudentId,
             LandLordId = complaint.LandLordId,
             Description = complaint.Description,
@@ -60,9 +61,10 @@ public class ComplaintService : IComplaintService
 
         return new ComplaintIndexedResponse
         {
-            Records = complaints.Select(c => new ComplaintResponse
+                Records = complaints.Select(c => new ComplaintResponse
             {
                 ComplaintId = c.ComplaintId,
+                Title = c.Title,
                 StudentId = c.StudentId,
                 LandLordId = c.LandLordId,
                 Description = c.Description,
@@ -80,10 +82,11 @@ public class ComplaintService : IComplaintService
         var complaint = new Domain.Entities.Complaint
         {
             ComplaintId = Guid.NewGuid(),
+            Title = request.Title,
             StudentId = request.StudentId,
             LandLordId = request.LandLordId,
             Description = request.Description,
-            Status = ComplaintStatus.Pending,
+            Status = ComplaintStatus.Open,
             CreatedDate = DateTime.UtcNow
         };
 
@@ -93,6 +96,7 @@ public class ComplaintService : IComplaintService
         return new ComplaintResponse
         {
             ComplaintId = complaint.ComplaintId,
+            Title = complaint.Title,
             StudentId = complaint.StudentId,
             LandLordId = complaint.LandLordId,
             Description = complaint.Description,
@@ -116,12 +120,13 @@ public class ComplaintService : IComplaintService
             complaint.Description = request.Description;
         }
 
-        _complaintRepository.Update(complaint);
+        await _complaintRepository.Update(complaint);
         await _complaintRepository.CommitAsync();
 
         return new ComplaintResponse
         {
             ComplaintId = complaint.ComplaintId,
+            Title = complaint.Title,
             StudentId = complaint.StudentId,
             LandLordId = complaint.LandLordId,
             Description = complaint.Description,

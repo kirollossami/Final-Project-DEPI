@@ -17,6 +17,7 @@ public class BookingResponse
     public decimal TotalPrice { get; set; }
     public BookingStatus BookingStatus { get; set; }
     public bool IsDeleted { get; set; }
+    public decimal? CommissionAmount { get; set; }
 }
 
 public class BookingIndexedResponse : GenericIndexedResponse<BookingResponse>
