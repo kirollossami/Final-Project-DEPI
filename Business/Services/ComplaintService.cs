@@ -27,7 +27,7 @@ public class ComplaintService : IComplaintService
             ComplaintId = complaint.ComplaintId,
             Title = complaint.Title,
             StudentId = complaint.StudentId,
-            LandLordId = complaint.LandLordId,
+            HousingUnitId = complaint.HousingUnitId,
             Description = complaint.Description,
             Status = complaint.Status,
             CreatedDate = complaint.CreatedDate
@@ -43,9 +43,9 @@ public class ComplaintService : IComplaintService
             query = query.Where(c => c.StudentId == filter.StudentId.Value);
         }
 
-        if (filter.LandLordId.HasValue)
+        if (filter.HousingUnitId.HasValue)
         {
-            query = query.Where(c => c.LandLordId == filter.LandLordId.Value);
+            query = query.Where(c => c.HousingUnitId == filter.HousingUnitId.Value);
         }
 
         if (filter.Status.HasValue)
@@ -66,7 +66,7 @@ public class ComplaintService : IComplaintService
                 ComplaintId = c.ComplaintId,
                 Title = c.Title,
                 StudentId = c.StudentId,
-                LandLordId = c.LandLordId,
+                HousingUnitId = c.HousingUnitId,
                 Description = c.Description,
                 Status = c.Status,
                 CreatedDate = c.CreatedDate
@@ -84,7 +84,7 @@ public class ComplaintService : IComplaintService
             ComplaintId = Guid.NewGuid(),
             Title = request.Title,
             StudentId = request.StudentId,
-            LandLordId = request.LandLordId,
+            HousingUnitId = request.HousingUnitId,
             Description = request.Description,
             Status = ComplaintStatus.Open,
             CreatedDate = DateTime.UtcNow
@@ -98,7 +98,7 @@ public class ComplaintService : IComplaintService
             ComplaintId = complaint.ComplaintId,
             Title = complaint.Title,
             StudentId = complaint.StudentId,
-            LandLordId = complaint.LandLordId,
+            HousingUnitId = complaint.HousingUnitId,
             Description = complaint.Description,
             Status = complaint.Status,
             CreatedDate = complaint.CreatedDate
@@ -109,6 +109,11 @@ public class ComplaintService : IComplaintService
     {
         var complaint = await _complaintRepository.GetAsync(request.ComplaintId);
         if (complaint == null) return null;
+
+        if (request.Title != null)
+        {
+            complaint.Title = request.Title;
+        }
 
         if (request.Status.HasValue)
         {
@@ -128,7 +133,7 @@ public class ComplaintService : IComplaintService
             ComplaintId = complaint.ComplaintId,
             Title = complaint.Title,
             StudentId = complaint.StudentId,
-            LandLordId = complaint.LandLordId,
+            HousingUnitId = complaint.HousingUnitId,
             Description = complaint.Description,
             Status = complaint.Status,
             CreatedDate = complaint.CreatedDate
