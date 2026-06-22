@@ -8,7 +8,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace StudentHousingAPI.Controllers;
 
 [ApiController]
-[Route("api/v1/[controller]")]
+[Route("api/[controller]")]
 [Authorize(Roles = "Admin")]
 public class AdminController : BaseController
 {
@@ -16,17 +16,20 @@ public class AdminController : BaseController
     private readonly IStudentService _studentService;
     private readonly IComplaintService _complaintService;
     private readonly IFileStorageService _fileStorageService;
+    private readonly ILandLordService _landLordService;
 
     public AdminController(
         IAdminService adminService,
         IStudentService studentService,
         IComplaintService complaintService,
-        IFileStorageService fileStorageService)
+        IFileStorageService fileStorageService,
+        ILandLordService landLordService)
     {
         _adminService = adminService;
         _studentService = studentService;
         _complaintService = complaintService;
         _fileStorageService = fileStorageService;
+        _landLordService = landLordService;
     }
 
     [HttpGet("users")]
@@ -109,5 +112,59 @@ public class AdminController : BaseController
     {
         var result = await _adminService.GetCommissionReportAsync(from, to);
         return Ok(result);
+    }
+
+    [HttpPut("landlords/{landlordId}/verification-status")]
+    public async Task<IActionResult> UpdateLandlordVerificationStatus(
+        Guid landlordId,
+        [FromBody] UpdateLandlordVerificationStatusRequest request)
+    {
+        var result = await _adminService.UpdateLandlordVerificationStatusAsync(landlordId, request.Status);
+        if (!result.Success)
+            return BadRequest(result);
+        return Ok(result);
+    }
+
+    [HttpGet("landlords/pending")]
+    public async Task<IActionResult> GetPendingLandlords(
+        [FromQuery] int pageNumber = 1,
+        [FromQuery] int pageSize = 10)
+    {
+        var result = await _adminService.GetPendingLandlordsAsync(pageNumber, pageSize);
+        return Ok(result);
+    }
+
+    [HttpGet("verification/{landlordId}/National-ID")]
+    public async Task<IActionResult> GetLandlordNationalId(Guid landlordId)
+    {
+        var landlord = await _landLordService.GetLandLordByIdAsync(landlordId);
+        if (landlord == null)
+            return NotFound(new { Message = "Landlord not found." });
+
+        if (string.IsNullOrEmpty(landlord.NationalIdImageUrl))
+            return NotFound(new { Message = "No National ID document uploaded." });
+
+        var file = await _fileStorageService.GetFileAsync(landlord.NationalIdImageUrl);
+        if (file == null)
+            return NotFound(new { Message = "National ID document file not found." });
+
+        return File(file.Value.Content, file.Value.ContentType);
+    }
+
+    [HttpGet("verification/{landlordId}/Unit-Documentation")]
+    public async Task<IActionResult> GetLandlordUnitDocumentation(Guid landlordId)
+    {
+        var landlord = await _landLordService.GetLandLordByIdAsync(landlordId);
+        if (landlord == null)
+            return NotFound(new { Message = "Landlord not found." });
+
+        if (string.IsNullOrEmpty(landlord.HousingUnitDocumentationUrl))
+            return NotFound(new { Message = "No Housing Unit Documentation uploaded." });
+
+        var file = await _fileStorageService.GetFileAsync(landlord.HousingUnitDocumentationUrl);
+        if (file == null)
+            return NotFound(new { Message = "Housing Unit Documentation file not found." });
+
+        return File(file.Value.Content, file.Value.ContentType);
     }
 }

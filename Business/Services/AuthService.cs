@@ -272,8 +272,12 @@ public class AuthService : IAuthService
             UserId = user.Id,
             CompanyName = request.CompanyName,
             NationalId = request.NationalId,
+            NationalIdImageUrl = string.Empty,
             PropertyOwnerShipProof = request.PropertyOwnerShipProof,
-            VerificationStatus = "Pending"
+            HousingUnitDocumentationUrl = string.Empty,
+            VerificationStatus = "Pending",
+            IsVerified = false,
+            CreatedAt = DateTime.UtcNow
         };
 
         await _landLordRepository.Insert(landlord);
