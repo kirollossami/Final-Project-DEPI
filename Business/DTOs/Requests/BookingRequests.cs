@@ -7,20 +7,29 @@ using System.Threading.Tasks;
 
 namespace Business.DTOs.Requests;
 
-/// <summary>
-/// Request model for creating a new booking
-/// </summary>
+
+//Request model for creating a new booking
 public class BookingCreateRequest
 {
     public Guid StudentId { get; set; }
-    public Guid RoomId { get; set; }
+    public BookingType BookingType { get; set; }
+    public Guid? BedId { get; set; }
+    public Guid? RoomId { get; set; }
+    public Guid? HousingUnitId { get; set; }
     public DateTime StartDate { get; set; }
     public DateTime EndDate { get; set; }
 }
 
-/// <summary>
-/// Request model for updating an existing booking
-/// </summary>
+public class MultiRoomBookingCreateRequest
+{
+    public Guid StudentId { get; set; }
+    public List<Guid> RoomIds { get; set; } = new();
+    public DateTime StartDate { get; set; }
+    public DateTime EndDate { get; set; }
+}
+
+
+//Request model for updating an existing booking
 public class BookingUpdateRequest
 {
     public Guid BookingId { get; set; }
@@ -29,21 +38,22 @@ public class BookingUpdateRequest
     public BookingStatus? BookingStatus { get; set; }
 }
 
-/// <summary>
-/// Request model for cancelling a booking
-/// </summary>
+
+// Request model for cancelling a booking
 public class BookingCancelRequest
 {
     public Guid BookingId { get; set; }
 }
 
-/// <summary>
-/// Request model for filtering/searching bookings
-/// </summary>
+
+// Request model for filtering/searching bookings
 public class BookingFilterRequest
 {
     public Guid? StudentId { get; set; }
+    public BookingType? BookingType { get; set; }
+    public Guid? BedId { get; set; }
     public Guid? RoomId { get; set; }
+    public Guid? HousingUnitId { get; set; }
     public BookingStatus? BookingStatus { get; set; }
     public DateTime? StartDateFrom { get; set; }
     public DateTime? StartDateTo { get; set; }
