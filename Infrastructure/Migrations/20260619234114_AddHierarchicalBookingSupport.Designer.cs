@@ -4,6 +4,7 @@ using Infrastructure.Context;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Infrastructure.Migrations
 {
     [DbContext(typeof(StudentHousingDBContext))]
-    partial class StudentHousingDBContextModelSnapshot : ModelSnapshot
+    [Migration("20260619234114_AddHierarchicalBookingSupport")]
+    partial class AddHierarchicalBookingSupport
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -41,11 +44,6 @@ namespace Infrastructure.Migrations
 
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
-
-                    b.Property<bool>("IsOccupied")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bit")
-                        .HasDefaultValue(false);
 
                     b.Property<Guid>("RoomId")
                         .HasColumnType("uniqueidentifier");
@@ -294,14 +292,6 @@ namespace Infrastructure.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("HousingUnitDocumentationUrl")
-                        .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
-
                     b.Property<bool>("IsVerified")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bit")
@@ -312,18 +302,10 @@ namespace Infrastructure.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
 
-                    b.Property<string>("NationalIdImageUrl")
-                        .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
-
                     b.Property<string>("PropertyOwnerShipProof")
                         .IsRequired()
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("datetime2");
 
                     b.Property<string>("UserId")
                         .HasColumnType("nvarchar(450)");
@@ -717,7 +699,7 @@ namespace Infrastructure.Migrations
                         {
                             Id = "admin-user-id-001",
                             AccessFailedCount = 0,
-                            ConcurrencyStamp = "484339af-7b09-49e5-9504-d5e80896fde3",
+                            ConcurrencyStamp = "f55e7a6f-982d-446a-aba0-bedc7fb3ca2d",
                             Email = "admin@studenthousing.com",
                             EmailConfirmed = true,
                             IsActive = true,
@@ -726,9 +708,9 @@ namespace Infrastructure.Migrations
                             LockoutEnabled = false,
                             NormalizedEmail = "ADMIN@STUDENTHOUSING.COM",
                             NormalizedUserName = "ADMIN@STUDENTHOUSING.COM",
-                            PasswordHash = "AQAAAAIAAYagAAAAEH3fcC04/lzteoyKTBKqZv9Q3/ZBe54vONX1FO/ZlQn8QU9snNgBj6iVx44bI8iMpg==",
+                            PasswordHash = "AQAAAAIAAYagAAAAECDbhemZoX7ynk6BZCJTkhFr7wvinLCNjtuyhpCUywHv/OaGdQay8fGYQNaYHE4Eyg==",
                             PhoneNumberConfirmed = false,
-                            SecurityStamp = "2ab862e3-63c3-4397-8453-9f09d2c4ae2b",
+                            SecurityStamp = "c0f40086-dded-483f-a25c-f58deb2eab14",
                             TwoFactorEnabled = false,
                             UserName = "admin@studenthousing.com"
                         });

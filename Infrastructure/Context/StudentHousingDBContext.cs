@@ -49,6 +49,7 @@ public class StudentHousingDBContext : IdentityDbContext<User>
     }
 
     public DbSet<Booking> Bookings { get; set; }
+    public DbSet<Bed> Beds { get; set; }
     public DbSet<Complaint> Complaints { get; set; }
     public DbSet<HousingUnit> HousingUnits { get; set; }
     public DbSet<LandLord> LandLords { get; set; }
@@ -58,6 +59,7 @@ public class StudentHousingDBContext : IdentityDbContext<User>
     public DbSet<Review> Reviews { get; set; }
     public DbSet<Room> Rooms { get; set; }
     public DbSet<Student> Students { get; set; }
+    public DbSet<UnitImage> UnitImages { get; set; }
     public DbSet<Wishlist> Wishlists { get; set; }
     public DbSet<CommissionRecord> CommissionRecords { get; set; }
 
