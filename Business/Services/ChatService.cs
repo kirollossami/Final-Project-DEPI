@@ -1,0 +1,208 @@
+using Business.DTOs.Responses;
+using Business.Interfaces;
+using Domain.Entities;
+using Infrastructure.Repositories;
+using Infrastructure.Repositories.Base;
+using Microsoft.EntityFrameworkCore;
+
+namespace Business.Services;
+
+public class ChatService : IChatService
+{
+    private readonly IBaseRepository<Conversation> _conversationRepository;
+    private readonly IBaseRepository<Message> _messageRepository;
+    private readonly IBookingRepository _bookingRepository;
+
+    public ChatService(
+        IBaseRepository<Conversation> conversationRepository,
+        IBaseRepository<Message> messageRepository,
+        IBookingRepository bookingRepository)
+    {
+        _conversationRepository = conversationRepository;
+        _messageRepository = messageRepository;
+        _bookingRepository = bookingRepository;
+    }
+
+    public async Task<ConversationResponse> GetOrCreateConversationAsync(Guid bookingId, string userId)
+    {
+        var conversation = await _conversationRepository.GetAll()
+            .FirstOrDefaultAsync(c => c.BookingId == bookingId);
+
+        if (conversation != null)
+        {
+            return MapConversation(conversation);
+        }
+
+        var booking = await _bookingRepository.GetAll()
+            .Include(b => b.Student)
+            .Include(b => b.HousingUnit)
+                .ThenInclude(h => h.LandLord)
+            .Include(b => b.Room)
+                .ThenInclude(r => r.HousingUnit)
+                    .ThenInclude(h => h.LandLord)
+            .Include(b => b.Bed)
+                .ThenInclude(bd => bd.Room)
+                    .ThenInclude(r => r.HousingUnit)
+                        .ThenInclude(h => h.LandLord)
+            .FirstOrDefaultAsync(b => b.BookingId == bookingId);
+
+        if (booking?.Student?.UserId == null)
+        {
+            throw new InvalidOperationException("Booking or associated student not found.");
+        }
+
+        var landLord = booking.HousingUnit?.LandLord
+            ?? booking.Room?.HousingUnit?.LandLord
+            ?? booking.Bed?.Room?.HousingUnit?.LandLord;
+
+        if (landLord?.UserId == null)
+        {
+            throw new InvalidOperationException("Booking or associated landlord not found.");
+        }
+
+        conversation = new Conversation
+        {
+            ConversationId = Guid.NewGuid(),
+            BookingId = bookingId,
+            StudentUserId = booking.Student.UserId,
+            LandLordUserId = landLord.UserId,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        await _conversationRepository.Insert(conversation);
+        await _conversationRepository.CommitAsync();
+
+        return MapConversation(conversation);
+    }
+
+    public async Task<ConversationResponse?> GetConversationByIdAsync(Guid conversationId, string userId)
+    {
+        var conversation = await _conversationRepository.GetAsync(conversationId);
+        if (conversation == null) return null;
+
+        if (conversation.StudentUserId != userId && conversation.LandLordUserId != userId)
+        {
+            throw new UnauthorizedAccessException("User is not a participant of this conversation.");
+        }
+
+        return MapConversation(conversation);
+    }
+
+    public async Task<PagedMessagesResponse> GetMessagesAsync(Guid conversationId, string userId, int page = 1, int pageSize = 20)
+    {
+        if (!await IsParticipantAsync(conversationId, userId))
+        {
+            throw new UnauthorizedAccessException("User is not a participant of this conversation.");
+        }
+
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+
+        var query = _messageRepository.GetAll()
+            .Where(m => m.ConversationId == conversationId)
+            .OrderByDescending(m => m.SentAt);
+
+        var totalCount = await query.CountAsync();
+        var messages = await query
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+
+        return new PagedMessagesResponse
+        {
+            Messages = messages.Select(m => new MessageResponse
+            {
+                MessageId = m.MessageId,
+                ConversationId = m.ConversationId,
+                SenderId = m.SenderId,
+                Content = m.Content,
+                SentAt = m.SentAt,
+                IsRead = m.IsRead
+            }).ToList(),
+            TotalCount = totalCount,
+            Page = page,
+            PageSize = pageSize,
+            HasMore = (page * pageSize) < totalCount
+        };
+    }
+
+    public async Task<MessageResponse> SaveMessageAsync(Guid conversationId, string senderId, string content)
+    {
+        if (!await IsParticipantAsync(conversationId, senderId))
+        {
+            throw new UnauthorizedAccessException("User is not a participant of this conversation.");
+        }
+
+        var message = new Message
+        {
+            MessageId = Guid.NewGuid(),
+            ConversationId = conversationId,
+            SenderId = senderId,
+            Content = content,
+            SentAt = DateTime.UtcNow,
+            IsRead = false
+        };
+
+        await _messageRepository.Insert(message);
+
+        var conversation = await _conversationRepository.GetAsync(conversationId);
+        if (conversation != null)
+        {
+            conversation.UpdatedAt = DateTime.UtcNow;
+        }
+
+        await _messageRepository.CommitAsync();
+
+        return new MessageResponse
+        {
+            MessageId = message.MessageId,
+            ConversationId = message.ConversationId,
+            SenderId = message.SenderId,
+            Content = message.Content,
+            SentAt = message.SentAt,
+            IsRead = message.IsRead
+        };
+    }
+
+    public async Task MarkAsReadAsync(Guid conversationId, string userId)
+    {
+        if (!await IsParticipantAsync(conversationId, userId))
+        {
+            throw new UnauthorizedAccessException("User is not a participant of this conversation.");
+        }
+
+        var unreadMessages = await _messageRepository.GetAll()
+            .Where(m => m.ConversationId == conversationId && m.SenderId != userId && !m.IsRead)
+            .ToListAsync();
+
+        foreach (var message in unreadMessages)
+        {
+            message.IsRead = true;
+        }
+
+        if (unreadMessages.Count > 0)
+        {
+            await _messageRepository.CommitAsync();
+        }
+    }
+
+    public async Task<bool> IsParticipantAsync(Guid conversationId, string userId)
+    {
+        var conversation = await _conversationRepository.GetAsync(conversationId);
+        if (conversation == null) return false;
+
+        return conversation.StudentUserId == userId || conversation.LandLordUserId == userId;
+    }
+
+    private static ConversationResponse MapConversation(Conversation conversation)
+    {
+        return new ConversationResponse
+        {
+            ConversationId = conversation.ConversationId,
+            BookingId = conversation.BookingId,
+            StudentUserId = conversation.StudentUserId,
+            LandLordUserId = conversation.LandLordUserId,
+            CreatedAt = conversation.CreatedAt
+        };
+    }
+}

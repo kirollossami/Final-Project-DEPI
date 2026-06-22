@@ -23,6 +23,12 @@ public class PaymentConfiguration : IEntityTypeConfiguration<Payment>
         builder.Property(p => p.TransactionId)
             .HasMaxLength(100);
 
+        builder.Property(p => p.StripePaymentIntentId)
+            .HasMaxLength(500);
+
+        builder.Property(p => p.ClientSecret)
+            .HasMaxLength(500);
+
         builder.HasOne(p => p.Booking)
             .WithOne(b => b.Payment)
             .HasForeignKey<Payment>(p => p.BookingId)

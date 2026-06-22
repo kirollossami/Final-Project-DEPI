@@ -10,6 +10,7 @@ namespace Domain.Enums
     {
         InstaPay,
         VodafoneCash,
-        Cash
+        Cash,
+        CreditCard
     }
 }

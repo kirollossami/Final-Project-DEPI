@@ -4,6 +4,7 @@ using Infrastructure.Context;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Infrastructure.Migrations
 {
     [DbContext(typeof(StudentHousingDBContext))]
-    partial class StudentHousingDBContextModelSnapshot : ModelSnapshot
+    [Migration("20260622151413_AddConversationsAndMessages")]
+    partial class AddConversationsAndMessages
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -800,7 +803,7 @@ namespace Infrastructure.Migrations
                         {
                             Id = "admin-user-id-001",
                             AccessFailedCount = 0,
-                            ConcurrencyStamp = "b4ed0518-9310-41a6-8f07-f5ceecf6d91b",
+                            ConcurrencyStamp = "824197b3-393f-498e-ac1e-87149880f30c",
                             Email = "admin@studenthousing.com",
                             EmailConfirmed = true,
                             IsActive = true,
@@ -809,9 +812,9 @@ namespace Infrastructure.Migrations
                             LockoutEnabled = false,
                             NormalizedEmail = "ADMIN@STUDENTHOUSING.COM",
                             NormalizedUserName = "ADMIN@STUDENTHOUSING.COM",
-                            PasswordHash = "AQAAAAIAAYagAAAAEHEQ6uwWDcfl6xxljbETHHwieuusgEBmxHBtF7/BjMycBUr8L4U8z2KdpSRdIWks8Q==",
+                            PasswordHash = "AQAAAAIAAYagAAAAEP1EW/ahq30NGp6Zv+nH2JlB1R25wmydyJDu5hDIFxWueEYcs64KU0eHaOfdTZ3OIQ==",
                             PhoneNumberConfirmed = false,
-                            SecurityStamp = "748665fa-15ca-4399-baae-63e1b1b33d92",
+                            SecurityStamp = "0ee8af06-ac3b-499d-9e63-2ee2f7c0fc53",
                             TwoFactorEnabled = false,
                             UserName = "admin@studenthousing.com"
                         });
