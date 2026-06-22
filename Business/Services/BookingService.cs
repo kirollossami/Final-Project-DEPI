@@ -267,6 +267,20 @@ public class BookingService : IBookingService
         await _bookingRepository.Insert(booking);
         await _bookingRepository.CommitAsync();
 
+        var commissionRate = _commissionSettings.GlobalRate;
+        var commissionAmount = totalPrice * commissionRate;
+
+        var commissionRecord = new CommissionRecord
+        {
+            CommissionRecordId = Guid.NewGuid(),
+            BookingId = booking.BookingId,
+            Rate = commissionRate,
+            Amount = commissionAmount
+        };
+
+        await _commissionRecordRepository.Insert(commissionRecord);
+        await _commissionRecordRepository.CommitAsync();
+
         var student = await _studentRepository.GetAsync(request.StudentId);
         if (student?.UserId != null)
         {
@@ -293,7 +307,7 @@ public class BookingService : IBookingService
             TotalPrice = booking.TotalPrice,
             BookingStatus = booking.BookingStatus,
             IsDeleted = booking.IsDeleted,
-            CommissionAmount = null,
+            CommissionAmount = commissionAmount,
             ContractId = booking.ContractId,
             ContractPdfUrl = booking.ContractPdfUrl,
             CreatedAt = booking.CreatedAt,
@@ -423,19 +437,6 @@ public class BookingService : IBookingService
         booking.BookingStatus = BookingStatus.Approved;
         booking.UpdatedAt = DateTime.UtcNow;
         await _bookingRepository.Update(booking);
-
-        var commissionRate = _commissionSettings.GlobalRate;
-        var commissionAmount = booking.TotalPrice * commissionRate;
-
-        var commissionRecord = new CommissionRecord
-        {
-            CommissionRecordId = Guid.NewGuid(),
-            BookingId = booking.BookingId,
-            Rate = commissionRate,
-            Amount = commissionAmount
-        };
-
-        await _commissionRecordRepository.Insert(commissionRecord);
         await _bookingRepository.CommitAsync();
     }
 }
