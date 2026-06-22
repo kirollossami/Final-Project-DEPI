@@ -12,8 +12,13 @@ public class LandLordResponse
     public string? UserId { get; set; }
     public string? CompanyName { get; set; }
     public string NationalId { get; set; }
+    public string NationalIdImageUrl { get; set; }
     public string PropertyOwnerShipProof { get; set; }
+    public string HousingUnitDocumentationUrl { get; set; }
     public string VerificationStatus { get; set; }
+    public bool IsVerified { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime? UpdatedAt { get; set; }
 }
 
 public class LandLordIndexedResponse : GenericIndexedResponse<LandLordResponse>
