@@ -154,7 +154,7 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
     {
-        policy.AllowAnyOrigin()
+        policy.WithOrigins("  http://localhost:4200")
               .AllowAnyMethod()
               .AllowAnyHeader();
     });
@@ -192,12 +192,18 @@ builder.Services.AddSwaggerGen(options =>
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
-if (app.Environment.IsDevelopment())
+app.UseSwagger();
+app.UseSwaggerUI(c =>
 {
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
+    c.SwaggerEndpoint("/swagger/v1/swagger.json", "Student Housing API V1");
+});
+
+
+app.MapGet("/", async context =>
+{
+    context.Response.Redirect("/swagger");
+    await System.Threading.Tasks.Task.CompletedTask;
+});
 
 app.UseCors("AllowAll");
 
