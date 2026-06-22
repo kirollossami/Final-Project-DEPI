@@ -24,9 +24,9 @@ public class ComplaintConfiguration : IEntityTypeConfiguration<Complaint>
             .HasForeignKey(c => c.StudentId)
             .OnDelete(DeleteBehavior.Restrict);
 
-        builder.HasOne(c => c.LandLord)
-            .WithMany()
-            .HasForeignKey(c => c.LandLordId)
+        builder.HasOne(c => c.HousingUnit)
+            .WithMany(h => h.Complaints)
+            .HasForeignKey(c => c.HousingUnitId)
             .OnDelete(DeleteBehavior.Restrict);
     }
 }

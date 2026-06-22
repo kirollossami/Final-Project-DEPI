@@ -106,6 +106,7 @@ builder.Services.Configure<CommissionSettings>(
 
 // Register Repositories
 builder.Services.AddScoped<IBookingRepository, BookingRepository>();
+builder.Services.AddScoped<IBedRepository, BedRepository>();
 builder.Services.AddScoped<ICommissionRecordRepository, CommissionRecordRepository>();
 builder.Services.AddScoped<IComplaintRepository, ComplaintRepository>();
 builder.Services.AddScoped<IHousingUnitRepository, HousingUnitRepository>();
@@ -115,6 +116,7 @@ builder.Services.AddScoped<IPaymentRepository, PaymentRepository>();
 builder.Services.AddScoped<IReviewRepository, ReviewRepository>();
 builder.Services.AddScoped<IRoomRepository, RoomRepository>();
 builder.Services.AddScoped<IStudentRepository, StudentRepository>();
+builder.Services.AddScoped<IUnitImageRepository, UnitImageRepository>();
 builder.Services.AddScoped<IWishlistRepository, WishlistRepository>();
 builder.Services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
 
@@ -129,11 +131,14 @@ builder.Services.AddScoped<ILandLordService, LandLordService>();
 builder.Services.AddScoped<IHousingUnitService, HousingUnitService>();
 builder.Services.AddScoped<IBookingService, BookingService>();
 builder.Services.AddScoped<IRoomService, RoomService>();
+builder.Services.AddScoped<IBedService, BedService>();
 builder.Services.AddScoped<IReviewService, ReviewService>();
 builder.Services.AddScoped<IWishlistService, WishlistService>();
 builder.Services.AddScoped<IComplaintService, ComplaintService>();
 builder.Services.AddScoped<IPaymentService, PaymentService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
+builder.Services.AddScoped<IPricingService, PricingService>();
+builder.Services.AddScoped<IBookingConflictService, BookingConflictService>();
 builder.Services.AddSingleton<ITokenBlacklistService, TokenBlacklistService>();
 
 #region Validators
