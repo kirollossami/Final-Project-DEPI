@@ -17,7 +17,9 @@ namespace Domain.Entities
         public string City { get; set; }
         public string Area { get; set; }
         public decimal Price { get; set; }
+        public decimal BaseMonthlyPrice { get; set; }
         public string? UnitImageUrl { get; set; }
+        public string? VideoUrl { get; set; }
         public Gender GenderAllowed { get; set; }
         public string Rules { get; set; }
         public bool IsDeleted { get; set; } = false;
@@ -26,11 +28,17 @@ namespace Domain.Entities
         public string Location { get; set; }
         public int NumberOfRooms { get; set; }
         public bool IsAvailable { get; set; }
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public DateTime? UpdatedAt { get; set; }
+
         public virtual LandLord? LandLord { get; set; }
 
         public virtual ICollection<Room>? Rooms { get; set; }
+        public virtual ICollection<Booking>? Bookings { get; set; }
         public virtual ICollection<Review>? Reviews { get; set; }
         public virtual ICollection<Wishlist>? WishlistedBy { get; set; }
+        public virtual ICollection<UnitImage>? UnitImages { get; set; }
+        public virtual ICollection<Complaint>? Complaints { get; set; }
     }
 
 }

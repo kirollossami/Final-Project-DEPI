@@ -10,15 +10,24 @@ namespace Business.Services;
 public class RoomService : IRoomService
 {
     private readonly IRoomRepository _roomRepository;
+    private readonly IHousingUnitRepository _housingUnitRepository;
+    private readonly ILandLordService _landLordService;
 
-    public RoomService(IRoomRepository roomRepository)
+    public RoomService(
+        IRoomRepository roomRepository,
+        IHousingUnitRepository housingUnitRepository,
+        ILandLordService landLordService)
     {
         _roomRepository = roomRepository;
+        _housingUnitRepository = housingUnitRepository;
+        _landLordService = landLordService;
     }
 
     public async Task<RoomResponse?> GetRoomByIdAsync(Guid roomId)
     {
-        var room = await _roomRepository.GetAsync(roomId);
+        var room = await _roomRepository.GetAll()
+            .Include(r => r.Beds)
+            .FirstOrDefaultAsync(r => r.RoomId == roomId);
         if (room == null) return null;
 
         return new RoomResponse
@@ -29,7 +38,23 @@ public class RoomService : IRoomService
             RoomImageUrl = room.RoomImageUrl,
             NumberOfBeds = room.NumberOfBeds,
             Price = room.Price,
-            IsAvailable = room.IsAvailable
+            PricePerMonth = room.PricePerMonth,
+            Capacity = room.Capacity,
+            CurrentOccupancy = room.CurrentOccupancy,
+            IsAvailable = room.IsAvailable,
+            CalculatedPrice = null,
+            CreatedAt = room.CreatedAt,
+            UpdatedAt = room.UpdatedAt,
+            Beds = room.Beds?.Select(b => new BedResponse
+            {
+                BedId = b.BedId,
+                RoomId = b.RoomId,
+                BedNumber = b.BedNumber,
+                IsAvailable = b.IsAvailable,
+                IsOccupied = b.IsOccupied,
+                CreatedAt = b.CreatedAt,
+                UpdatedAt = b.UpdatedAt
+            }).ToList() ?? new List<BedResponse>()
         };
     }
 
@@ -78,7 +103,14 @@ public class RoomService : IRoomService
                 RoomImageUrl = r.RoomImageUrl,
                 NumberOfBeds = r.NumberOfBeds,
                 Price = r.Price,
-                IsAvailable = r.IsAvailable
+                PricePerMonth = r.PricePerMonth,
+                Capacity = r.Capacity,
+                CurrentOccupancy = r.CurrentOccupancy,
+                IsAvailable = r.IsAvailable,
+                CalculatedPrice = null,
+                CreatedAt = r.CreatedAt,
+                UpdatedAt = r.UpdatedAt,
+                Beds = new List<BedResponse>()
             }).ToList(),
             TotalRecords = totalCount,
             PageIndex = filter.PageNumber - 1,
@@ -88,6 +120,12 @@ public class RoomService : IRoomService
 
     public async Task<RoomResponse?> CreateRoomAsync(RoomCreateRequest request)
     {
+        var housingUnit = await _housingUnitRepository.GetAsync(request.HousingUnitId);
+        if (housingUnit == null) return null;
+
+        var isVerified = await _landLordService.IsLandlordVerifiedAsync(housingUnit.LandLordId);
+        if (!isVerified) return null;
+
         var room = new Domain.Entities.Room
         {
             RoomId = Guid.NewGuid(),
@@ -96,7 +134,12 @@ public class RoomService : IRoomService
             RoomImageUrl = request.RoomImageUrl,
             NumberOfBeds = request.NumberOfBeds,
             Price = request.Price,
-            IsAvailable = request.IsAvailable
+            PricePerMonth = request.Price,
+            Capacity = request.Capacity,
+            CurrentOccupancy = 0,
+            IsAvailable = request.IsAvailable,
+            IsDeleted = false,
+            CreatedAt = DateTime.UtcNow
         };
 
         await _roomRepository.Insert(room);
@@ -110,7 +153,14 @@ public class RoomService : IRoomService
             RoomImageUrl = room.RoomImageUrl,
             NumberOfBeds = room.NumberOfBeds,
             Price = room.Price,
-            IsAvailable = room.IsAvailable
+            PricePerMonth = room.PricePerMonth,
+            Capacity = room.Capacity,
+            CurrentOccupancy = room.CurrentOccupancy,
+            IsAvailable = room.IsAvailable,
+            CalculatedPrice = null,
+            CreatedAt = room.CreatedAt,
+            UpdatedAt = room.UpdatedAt,
+            Beds = new List<BedResponse>()
         };
     }
 
@@ -118,6 +168,12 @@ public class RoomService : IRoomService
     {
         var room = await _roomRepository.GetAsync(request.RoomId);
         if (room == null) return null;
+
+        var housingUnit = await _housingUnitRepository.GetAsync(room.HousingUnitId);
+        if (housingUnit == null) return null;
+
+        var isVerified = await _landLordService.IsLandlordVerifiedAsync(housingUnit.LandLordId);
+        if (!isVerified) return null;
 
         if (request.RoomType.HasValue)
         {
@@ -137,12 +193,20 @@ public class RoomService : IRoomService
         if (request.Price.HasValue)
         {
             room.Price = request.Price.Value;
+            room.PricePerMonth = request.Price.Value;
+        }
+
+        if (request.Capacity.HasValue)
+        {
+            room.Capacity = request.Capacity.Value;
         }
 
         if (request.IsAvailable.HasValue)
         {
             room.IsAvailable = request.IsAvailable.Value;
         }
+
+        room.UpdatedAt = DateTime.UtcNow;
 
         await _roomRepository.Update(room);
         await _roomRepository.CommitAsync();
@@ -155,7 +219,14 @@ public class RoomService : IRoomService
             RoomImageUrl = room.RoomImageUrl,
             NumberOfBeds = room.NumberOfBeds,
             Price = room.Price,
-            IsAvailable = room.IsAvailable
+            PricePerMonth = room.PricePerMonth,
+            Capacity = room.Capacity,
+            CurrentOccupancy = room.CurrentOccupancy,
+            IsAvailable = room.IsAvailable,
+            CalculatedPrice = null,
+            CreatedAt = room.CreatedAt,
+            UpdatedAt = room.UpdatedAt,
+            Beds = new List<BedResponse>()
         };
     }
 
@@ -163,6 +234,12 @@ public class RoomService : IRoomService
     {
         var room = await _roomRepository.GetAsync(roomId);
         if (room == null) return false;
+
+        var housingUnit = await _housingUnitRepository.GetAsync(room.HousingUnitId);
+        if (housingUnit == null) return false;
+
+        var isVerified = await _landLordService.IsLandlordVerifiedAsync(housingUnit.LandLordId);
+        if (!isVerified) return false;
 
         await _roomRepository.Delete(room);
         await _roomRepository.CommitAsync();

@@ -262,4 +262,85 @@ public class AdminService : IAdminService
             }).ToList()
         };
     }
+
+    public async Task<ApiResponse<string>> UpdateLandlordVerificationStatusAsync(Guid landlordId, string status)
+    {
+        var validStatuses = new[] { "Approved", "Rejected", "Pending" };
+        if (!validStatuses.Contains(status))
+        {
+            return new ApiResponse<string>
+            {
+                Success = false,
+                Message = "Invalid status. Valid statuses are: Approved, Rejected, Pending."
+            };
+        }
+
+        var landlord = await _landLordRepository.GetAsync(landlordId);
+        if (landlord == null)
+        {
+            return new ApiResponse<string>
+            {
+                Success = false,
+                Message = "Landlord not found."
+            };
+        }
+
+        if (status == "Approved")
+        {
+            if (string.IsNullOrEmpty(landlord.NationalIdImageUrl) || string.IsNullOrEmpty(landlord.HousingUnitDocumentationUrl))
+            {
+                return new ApiResponse<string>
+                {
+                    Success = false,
+                    Message = "Cannot approve a landlord with missing or incomplete verification documents."
+                };
+            }
+        }
+
+        landlord.VerificationStatus = status;
+        landlord.IsVerified = status == "Approved";
+        landlord.UpdatedAt = DateTime.UtcNow;
+        await _landLordRepository.Update(landlord);
+        await _landLordRepository.CommitAsync();
+
+        return new ApiResponse<string>
+        {
+            Success = true,
+            Message = $"Landlord status updated to {status} successfully."
+        };
+    }
+
+    public async Task<LandLordIndexedResponse> GetPendingLandlordsAsync(int pageNumber, int pageSize)
+    {
+        var query = _landLordRepository.GetAll()
+            .Include(l => l.User)
+            .Where(l => !l.IsVerified);
+
+        var totalCount = await query.CountAsync();
+        var landlords = await query
+            .Skip((pageNumber - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+
+        return new LandLordIndexedResponse
+        {
+            Records = landlords.Select(l => new LandLordResponse
+            {
+                LandLordId = l.LandLordId,
+                UserId = l.UserId,
+                CompanyName = l.CompanyName,
+                NationalId = l.NationalId,
+                NationalIdImageUrl = l.NationalIdImageUrl,
+                PropertyOwnerShipProof = l.PropertyOwnerShipProof,
+                HousingUnitDocumentationUrl = l.HousingUnitDocumentationUrl,
+                VerificationStatus = l.VerificationStatus,
+                IsVerified = l.IsVerified,
+                CreatedAt = l.CreatedAt,
+                UpdatedAt = l.UpdatedAt
+            }).ToList(),
+            TotalRecords = totalCount,
+            PageIndex = pageNumber - 1,
+            PageSize = pageSize
+        };
+    }
 }

@@ -12,12 +12,12 @@ namespace Domain.Entities
         public Guid ComplaintId { get; set; }
         public string? Title { get; set; }
         public Guid StudentId { get; set; }
-        public Guid LandLordId { get; set; }
+        public Guid HousingUnitId { get; set; }
         public string Description { get; set; }
         public ComplaintStatus Status { get; set; } // Enum: Open, InInvestigation, Resolved
         public DateTime CreatedDate { get; set; }
 
         public virtual Student? Student { get; set; }
-        public virtual LandLord? LandLord { get; set; }
+        public virtual HousingUnit? HousingUnit { get; set; }
     }
 }

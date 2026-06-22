@@ -150,5 +150,12 @@ public class StudentController : BaseController
             userId, status, pageNumber, pageSize);
         return Ok(result);
     }
+
+    [HttpPost("MultiRoomBooking")]
+    public async Task<IActionResult> CreateMultiRoomBooking([FromBody] MultiRoomBookingCreateRequest request)
+    {
+        var result = await bookingService.CreateMultiRoomBookingAsync(request);
+        return Ok(result);
+    }
 }
 
