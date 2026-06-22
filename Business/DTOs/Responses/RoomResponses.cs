@@ -15,7 +15,14 @@ public class RoomResponse
     public string? RoomImageUrl { get; set; }
     public int NumberOfBeds { get; set; }
     public decimal Price { get; set; }
+    public decimal PricePerMonth { get; set; }
+    public int Capacity { get; set; }
+    public int CurrentOccupancy { get; set; }
     public bool IsAvailable { get; set; }
+    public decimal? CalculatedPrice { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime? UpdatedAt { get; set; }
+    public List<BedResponse> Beds { get; set; } = new();
 }
 
 public class RoomIndexedResponse : GenericIndexedResponse<RoomResponse>
