@@ -15,11 +15,17 @@ namespace Domain.Entities
         public string? RoomImageUrl { get; set; }
         public int NumberOfBeds { get; set; }
         public decimal Price { get; set; }
+        public decimal PricePerMonth { get; set; }
+        public int Capacity { get; set; }
+        public int CurrentOccupancy { get; set; } = 0;
         public bool IsAvailable { get; set; }
+        public bool IsDeleted { get; set; } = false;
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public DateTime? UpdatedAt { get; set; }
 
         public virtual HousingUnit? HousingUnit { get; set; }
-
-        public virtual ICollection<Booking> Bookings { get; set; } = new List<Booking>();
+        public virtual ICollection<Bed>? Beds { get; set; }
+        public virtual ICollection<Booking>? Bookings { get; set; } = new List<Booking>();
 
     }
 }
