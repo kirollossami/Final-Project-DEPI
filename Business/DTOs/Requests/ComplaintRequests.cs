@@ -14,7 +14,7 @@ public class ComplaintCreateRequest
 {
     public string? Title { get; set; }
     public Guid StudentId { get; set; }
-    public Guid LandLordId { get; set; }
+    public Guid HousingUnitId { get; set; }
     public string Description { get; set; }
 }
 
@@ -24,6 +24,7 @@ public class ComplaintCreateRequest
 public class ComplaintUpdateRequest
 {
     public Guid ComplaintId { get; set; }
+    public string? Title { get; set; }
     public string? Description { get; set; }
     public ComplaintStatus? Status { get; set; }
 }
@@ -34,7 +35,7 @@ public class ComplaintUpdateRequest
 public class ComplaintFilterRequest
 {
     public Guid? StudentId { get; set; }
-    public Guid? LandLordId { get; set; }
+    public Guid? HousingUnitId { get; set; }
     public ComplaintStatus? Status { get; set; }
     public DateTime? CreatedDateFrom { get; set; }
     public DateTime? CreatedDateTo { get; set; }
