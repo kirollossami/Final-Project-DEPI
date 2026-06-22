@@ -29,5 +29,8 @@ public static class ErrorMessageHelper
     public static string EmailAlreadyConfirmed => "Email is already confirmed.";
     public static string EmailConfirmationSuccess => "Email confirmed successfully.";
     public static string EmailConfirmationFailed => "Email confirmation failed. Invalid or expired token.";
+    public static string ForgotPasswordGeneric => "If the email exists, a password reset link has been sent.";
+    public static string PasswordResetSuccess => "Password has been reset successfully.";
+    public static string PasswordResetFailed => "Password reset failed. Invalid or expired token.";
 }
 

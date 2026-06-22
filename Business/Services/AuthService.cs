@@ -888,4 +888,94 @@ public class AuthService : IAuthService
             Message = ErrorMessageHelper.EmailConfirmationSuccess
         };
     }
+
+    public async Task<AuthResponse> ForgotPasswordAsync(ForgotPasswordRequest request)
+    {
+        if (string.IsNullOrEmpty(request.Email))
+        {
+            return new AuthResponse
+            {
+                Success = false,
+                Message = "Email is required."
+            };
+        }
+
+        var user = await _userManager.FindByEmailAsync(request.Email);
+
+        if (user == null)
+        {
+            return new AuthResponse
+            {
+                Success = true,
+                Message = ErrorMessageHelper.ForgotPasswordGeneric
+            };
+        }
+
+        var token = await _userManager.GeneratePasswordResetTokenAsync(user);
+        var encodedToken = Uri.EscapeDataString(token);
+
+        return new AuthResponse
+        {
+            Success = true,
+            Message = ErrorMessageHelper.ForgotPasswordGeneric,
+            Token = new TokenResponse
+            {
+                AccessToken = encodedToken,
+                ExpiresIn = 86400
+            },
+            User = new UserResponse
+            {
+                Id = user.Id,
+                Email = user.Email
+            }
+        };
+    }
+
+    public async Task<AuthResponse> ResetPasswordAsync(ResetPasswordRequest request)
+    {
+        if (string.IsNullOrEmpty(request.Email) || string.IsNullOrEmpty(request.Token) || string.IsNullOrEmpty(request.NewPassword))
+        {
+            return new AuthResponse
+            {
+                Success = false,
+                Message = "Email, token, and new password are required."
+            };
+        }
+
+        if (request.NewPassword != request.ConfirmPassword)
+        {
+            return new AuthResponse
+            {
+                Success = false,
+                Message = ErrorMessageHelper.PasswordsDoNotMatch
+            };
+        }
+
+        var user = await _userManager.FindByEmailAsync(request.Email);
+        if (user == null)
+        {
+            return new AuthResponse
+            {
+                Success = false,
+                Message = ErrorMessageHelper.PasswordResetFailed
+            };
+        }
+
+        var decodedToken = Uri.UnescapeDataString(request.Token);
+        var result = await _userManager.ResetPasswordAsync(user, decodedToken, request.NewPassword);
+        if (!result.Succeeded)
+        {
+            return new AuthResponse
+            {
+                Success = false,
+                Message = ErrorMessageHelper.PasswordResetFailed
+            };
+        }
+
+        return new AuthResponse
+        {
+            Success = true,
+            Message = ErrorMessageHelper.PasswordResetSuccess
+        };
+    }
 }
