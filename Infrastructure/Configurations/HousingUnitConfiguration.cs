@@ -13,6 +13,9 @@ public class HousingUnitConfiguration : IEntityTypeConfiguration<HousingUnit>
         builder.Property(h => h.Price)
             .HasPrecision(18, 2);
 
+        builder.Property(h => h.BaseMonthlyPrice)
+            .HasPrecision(18, 2);
+
         builder.Property(h => h.Title)
             .HasMaxLength(200)
             .IsRequired();
@@ -31,6 +34,12 @@ public class HousingUnitConfiguration : IEntityTypeConfiguration<HousingUnit>
         builder.Property(h => h.Area)
             .HasMaxLength(100)
             .IsRequired();
+
+        builder.Property(h => h.UnitImageUrl)
+            .HasMaxLength(500);
+
+        builder.Property(h => h.VideoUrl)
+            .HasMaxLength(500);
 
         builder.Property(h => h.Location)
             .HasMaxLength(500)
@@ -56,6 +65,11 @@ public class HousingUnitConfiguration : IEntityTypeConfiguration<HousingUnit>
             .HasForeignKey(r => r.HousingUnitId)
             .OnDelete(DeleteBehavior.Restrict);
 
+        builder.HasMany(h => h.Bookings)
+            .WithOne(b => b.HousingUnit)
+            .HasForeignKey(b => b.HousingUnitId)
+            .OnDelete(DeleteBehavior.Restrict);
+
         builder.HasMany(h => h.Reviews)
             .WithOne(r => r.HousingUnit)
             .HasForeignKey(r => r.HousingUnitId)
@@ -64,6 +78,16 @@ public class HousingUnitConfiguration : IEntityTypeConfiguration<HousingUnit>
         builder.HasMany(h => h.WishlistedBy)
             .WithOne(w => w.HousingUnit)
             .HasForeignKey(w => w.HousingUnitId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasMany(h => h.UnitImages)
+            .WithOne(ui => ui.HousingUnit)
+            .HasForeignKey(ui => ui.HousingUnitId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasMany(h => h.Complaints)
+            .WithOne(c => c.HousingUnit)
+            .HasForeignKey(c => c.HousingUnitId)
             .OnDelete(DeleteBehavior.Restrict);
     }
 }
