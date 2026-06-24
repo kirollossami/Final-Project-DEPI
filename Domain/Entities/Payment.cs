@@ -15,7 +15,10 @@ namespace Domain.Entities
         public PaymentMethod PaymentMethod { get; set; }
         public PaymentStatus PaymentStatus { get; set; }
         public DateTime PaymentDate { get; set; }
-        public string? TransactionId { get; set; }
-        public virtual Booking? Booking { get; set; }
+    public string? TransactionId { get; set; }
+    public string? StripePaymentIntentId { get; set; }
+    public string? ClientSecret { get; set; }
+    public DateTime? CompletedAt { get; set; }
+    public virtual Booking? Booking { get; set; }
     }
 }

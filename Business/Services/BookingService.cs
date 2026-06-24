@@ -17,6 +17,7 @@ public class BookingService : IBookingService
     private readonly IStudentRepository _studentRepository;
     private readonly IPricingService _pricingService;
     private readonly IBookingConflictService _bookingConflictService;
+    private readonly IChatService _chatService;
     private readonly CommissionSettings _commissionSettings;
 
     public BookingService(
@@ -25,6 +26,7 @@ public class BookingService : IBookingService
         IStudentRepository studentRepository,
         IPricingService pricingService,
         IBookingConflictService bookingConflictService,
+        IChatService chatService,
         IOptions<CommissionSettings> commissionSettings)
     {
         _bookingRepository = bookingRepository;
@@ -32,6 +34,7 @@ public class BookingService : IBookingService
         _studentRepository = studentRepository;
         _pricingService = pricingService;
         _bookingConflictService = bookingConflictService;
+        _chatService = chatService;
         _commissionSettings = commissionSettings.Value;
     }
 
@@ -278,6 +281,19 @@ public class BookingService : IBookingService
         await _commissionRecordRepository.Insert(commissionRecord);
         await _commissionRecordRepository.CommitAsync();
 
+        var student = await _studentRepository.GetAsync(request.StudentId);
+        if (student?.UserId != null)
+        {
+            try
+            {
+                await _chatService.GetOrCreateConversationAsync(booking.BookingId, student.UserId);
+            }
+            catch
+            {
+                // Non-critical: conversation creation failure should not break booking
+            }
+        }
+
         return new BookingResponse
         {
             BookingId = booking.BookingId,
@@ -400,5 +416,27 @@ public class BookingService : IBookingService
         }
 
         return results;
+    }
+
+    public async Task MarkBookingAsPaidAsync(Guid bookingId)
+    {
+        var booking = await _bookingRepository.GetAll()
+            .Include(b => b.CommissionRecord)
+            .FirstOrDefaultAsync(b => b.BookingId == bookingId);
+
+        if (booking == null)
+        {
+            throw new InvalidOperationException("Booking not found.");
+        }
+
+        if (booking.BookingStatus != BookingStatus.PaymentPending)
+        {
+            throw new InvalidOperationException("Booking is not in PaymentPending state.");
+        }
+
+        booking.BookingStatus = BookingStatus.Approved;
+        booking.UpdatedAt = DateTime.UtcNow;
+        await _bookingRepository.Update(booking);
+        await _bookingRepository.CommitAsync();
     }
 }

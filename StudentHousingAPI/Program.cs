@@ -106,6 +106,16 @@ builder.Services.Configure<CommissionSettings>(
 
 // Register Repositories
 builder.Services.AddScoped<IBookingRepository, BookingRepository>();
+builder.Services.AddScoped<IBaseRepository<Conversation>>(sp =>
+{
+    var context = sp.GetRequiredService<Infrastructure.Context.StudentHousingDBContext>();
+    return new Infrastructure.Repositories.Base.BaseRepository<Conversation>(context);
+});
+builder.Services.AddScoped<IBaseRepository<Message>>(sp =>
+{
+    var context = sp.GetRequiredService<Infrastructure.Context.StudentHousingDBContext>();
+    return new Infrastructure.Repositories.Base.BaseRepository<Message>(context);
+});
 builder.Services.AddScoped<IBedRepository, BedRepository>();
 builder.Services.AddScoped<ICommissionRecordRepository, CommissionRecordRepository>();
 builder.Services.AddScoped<IComplaintRepository, ComplaintRepository>();
@@ -140,6 +150,11 @@ builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<IPricingService, PricingService>();
 builder.Services.AddScoped<IBookingConflictService, BookingConflictService>();
 builder.Services.AddSingleton<ITokenBlacklistService, TokenBlacklistService>();
+builder.Services.AddScoped<IChatService, ChatService>();
+builder.Services.AddScoped<IStripePaymentService, StripePaymentService>();
+builder.Services.Configure<StripeSettings>(
+    builder.Configuration.GetSection("Stripe"));
+builder.Services.AddSignalR();
 
 #region Validators
 builder.Services.AddValidatorsFromAssemblyContaining<LoginValidator>();
@@ -150,13 +165,15 @@ builder.Services.AddFluentValidationAutoValidation();
 
 
 // Add CORS
+var allowedOrigins = builder.Configuration.GetSection("AllowedOrigins").Get<string[]>() ?? new[] { "http://localhost:4200" };
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowAll", policy =>
+    options.AddPolicy("AllowSpecific", policy =>
     {
-        policy.WithOrigins("  http://localhost:4200")
+        policy.WithOrigins(allowedOrigins)
               .AllowAnyMethod()
-              .AllowAnyHeader();
+              .AllowAnyHeader()
+              .AllowCredentials();
     });
 });
 
@@ -192,8 +209,15 @@ builder.Services.AddSwaggerGen(options =>
 
 var app = builder.Build();
 
-app.UseSwagger();
-app.UseSwaggerUI(c =>
+// Enable buffering for webhook raw body reading
+app.Use(async (context, next) =>
+{
+    context.Request.EnableBuffering();
+    await next();
+});
+
+// Configure the HTTP request pipeline.
+if (app.Environment.IsDevelopment())
 {
     c.SwaggerEndpoint("/swagger/v1/swagger.json", "Student Housing API V1");
 });
@@ -205,11 +229,12 @@ app.MapGet("/", async context =>
     await System.Threading.Tasks.Task.CompletedTask;
 });
 
-app.UseCors("AllowAll");
+app.UseCors("AllowSpecific");
 
 app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+app.MapHub<StudentHousingAPI.Hubs.ChatHub>("/chatHub");
 
 app.Run();
