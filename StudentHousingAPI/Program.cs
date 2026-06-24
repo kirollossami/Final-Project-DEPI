@@ -151,11 +151,12 @@ builder.Services.AddScoped<IPricingService, PricingService>();
 builder.Services.AddScoped<IBookingConflictService, BookingConflictService>();
 builder.Services.AddSingleton<ITokenBlacklistService, TokenBlacklistService>();
 builder.Services.AddScoped<IChatService, ChatService>();
-builder.Services.AddScoped<IStripePaymentService, StripePaymentService>();
+//builder.Services.AddScoped<IStripePaymentService, StripePaymentService>();
+/*
 builder.Services.Configure<StripeSettings>(
     builder.Configuration.GetSection("Stripe"));
 builder.Services.AddSignalR();
-
+*/
 #region Validators
 builder.Services.AddValidatorsFromAssemblyContaining<LoginValidator>();
 builder.Services.AddValidatorsFromAssemblyContaining<StudentRegisterValidator>();
@@ -207,6 +208,8 @@ builder.Services.AddSwaggerGen(options =>
     });
 });
 
+builder.Services.AddSignalR();
+
 var app = builder.Build();
 
 // Enable buffering for webhook raw body reading
@@ -219,9 +222,12 @@ app.Use(async (context, next) =>
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
-    c.SwaggerEndpoint("/swagger/v1/swagger.json", "Student Housing API V1");
-});
-
+    app.UseSwagger();
+    app.UseSwaggerUI(c =>
+    {
+        c.SwaggerEndpoint("/swagger/v1/swagger.json", "Student Housing API V1");
+    });
+}
 
 app.MapGet("/", async context =>
 {
