@@ -219,9 +219,15 @@ app.Use(async (context, next) =>
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
+    c.SwaggerEndpoint("/swagger/v1/swagger.json", "Student Housing API V1");
+});
+
+
+app.MapGet("/", async context =>
+{
+    context.Response.Redirect("/swagger");
+    await System.Threading.Tasks.Task.CompletedTask;
+});
 
 app.UseCors("AllowSpecific");
 
