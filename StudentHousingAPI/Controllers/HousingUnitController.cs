@@ -18,6 +18,14 @@ public class HousingUnitController : BaseController
         _housingUnitService = housingUnitService;
     }
 
+    [HttpGet("map-pins")]
+    [AllowAnonymous]
+    public async Task<IActionResult> GetMapPins()
+    {
+        var result = await _housingUnitService.GetMapPinsAsync();
+        return Ok(result);
+    }
+
     [HttpGet("GetById/{id}")]
     public async Task<IActionResult> GetHousingUnit(Guid id)
     {

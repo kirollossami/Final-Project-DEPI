@@ -11,4 +11,5 @@ public interface IHousingUnitService
     Task<HousingUnitResponse?> UpdateHousingUnitAsync(HousingUnitUpdateRequest request);
     Task<bool> DeleteHousingUnitAsync(Guid housingUnitId);
     Task<HousingUnitDetailsResponse?> GetHousingUnitDetailsAsync(Guid housingUnitId);
+    Task<List<MapPinResponse>> GetMapPinsAsync();
 }

@@ -26,6 +26,8 @@ namespace Domain.Entities
         public double? AverageRating { get; set; }
         public int ReviewCount { get; set; } = 0;
         public string Location { get; set; }
+        public double Latitude { get; set; }
+        public double Longitude { get; set; }
         public int NumberOfRooms { get; set; }
         public bool IsAvailable { get; set; }
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

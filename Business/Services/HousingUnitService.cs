@@ -39,6 +39,8 @@ public class HousingUnitService : IHousingUnitService
             GenderAllowed = housingUnit.GenderAllowed,
             Rules = housingUnit.Rules,
             Location = housingUnit.Location,
+            Latitude = housingUnit.Latitude,
+            Longitude = housingUnit.Longitude,
             NumberOfRooms = housingUnit.NumberOfRooms,
             IsAvailable = housingUnit.IsAvailable,
             AverageRating = housingUnit.AverageRating,
@@ -47,6 +49,24 @@ public class HousingUnitService : IHousingUnitService
             CreatedAt = housingUnit.CreatedAt,
             UpdatedAt = housingUnit.UpdatedAt
         };
+    }
+
+    public async Task<List<MapPinResponse>> GetMapPinsAsync()
+    {
+        var units = await _housingUnitRepository.GetAll()
+            .Where(h => !h.IsDeleted)
+            .Select(h => new MapPinResponse
+            {
+                HousingUnitId = h.HousingUnitId,
+                Title = h.Title,
+                Latitude = h.Latitude,
+                Longitude = h.Longitude,
+                Price = h.Price,
+                IsAvailable = h.IsAvailable
+            })
+            .ToListAsync();
+
+        return units;
     }
 
     public async Task<HousingUnitIndexedResponse> GetHousingUnitsAsync(HousingUnitFilterRequest filter)
@@ -112,6 +132,8 @@ public class HousingUnitService : IHousingUnitService
                 GenderAllowed = h.GenderAllowed,
                 Rules = h.Rules,
                 Location = h.Location,
+                Latitude = h.Latitude,
+                Longitude = h.Longitude,
                 NumberOfRooms = h.NumberOfRooms,
                 IsAvailable = h.IsAvailable,
                 AverageRating = h.AverageRating,
@@ -151,6 +173,8 @@ public class HousingUnitService : IHousingUnitService
             GenderAllowed = request.GenderAllowed,
             Rules = request.Rules,
             Location = request.Location,
+            Latitude = request.Latitude,
+            Longitude = request.Longitude,
             NumberOfRooms = request.NumberOfRooms,
             IsAvailable = request.IsAvailable,
             AverageRating = 0,
@@ -178,6 +202,8 @@ public class HousingUnitService : IHousingUnitService
             GenderAllowed = housingUnit.GenderAllowed,
             Rules = housingUnit.Rules,
             Location = housingUnit.Location,
+            Latitude = housingUnit.Latitude,
+            Longitude = housingUnit.Longitude,
             NumberOfRooms = housingUnit.NumberOfRooms,
             IsAvailable = housingUnit.IsAvailable,
             AverageRating = housingUnit.AverageRating,
@@ -260,6 +286,16 @@ public class HousingUnitService : IHousingUnitService
             housingUnit.Location = request.Location;
         }
 
+        if (request.Latitude.HasValue)
+        {
+            housingUnit.Latitude = request.Latitude.Value;
+        }
+
+        if (request.Longitude.HasValue)
+        {
+            housingUnit.Longitude = request.Longitude.Value;
+        }
+
         if (request.NumberOfRooms.HasValue)
         {
             housingUnit.NumberOfRooms = request.NumberOfRooms.Value;
@@ -291,6 +327,8 @@ public class HousingUnitService : IHousingUnitService
             GenderAllowed = housingUnit.GenderAllowed,
             Rules = housingUnit.Rules,
             Location = housingUnit.Location,
+            Latitude = housingUnit.Latitude,
+            Longitude = housingUnit.Longitude,
             NumberOfRooms = housingUnit.NumberOfRooms,
             IsAvailable = housingUnit.IsAvailable,
             AverageRating = housingUnit.AverageRating,
@@ -347,6 +385,8 @@ public class HousingUnitService : IHousingUnitService
             AverageRating = housingUnit.AverageRating,
             ReviewCount = housingUnit.ReviewCount,
             Location = housingUnit.Location,
+            Latitude = housingUnit.Latitude,
+            Longitude = housingUnit.Longitude,
             NumberOfRooms = housingUnit.NumberOfRooms,
             IsAvailable = housingUnit.IsAvailable,
             CreatedAt = housingUnit.CreatedAt,

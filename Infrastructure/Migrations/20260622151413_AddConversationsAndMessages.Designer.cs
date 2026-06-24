@@ -4,6 +4,7 @@ using Infrastructure.Context;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Infrastructure.Migrations
 {
     [DbContext(typeof(StudentHousingDBContext))]
-    partial class StudentHousingDBContextModelSnapshot : ModelSnapshot
+    [Migration("20260622151413_AddConversationsAndMessages")]
+    partial class AddConversationsAndMessages
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -197,14 +200,11 @@ namespace Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<Guid?>("BookingId")
+                    b.Property<Guid>("BookingId")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
-
-                    b.Property<Guid?>("HousingUnitId")
-                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("LandLordUserId")
                         .IsRequired()
@@ -222,10 +222,7 @@ namespace Infrastructure.Migrations
                     b.HasKey("ConversationId");
 
                     b.HasIndex("BookingId")
-                        .IsUnique()
-                        .HasFilter("[BookingId] IS NOT NULL");
-
-                    b.HasIndex("HousingUnitId");
+                        .IsUnique();
 
                     b.ToTable("Conversations");
                 });
@@ -806,7 +803,7 @@ namespace Infrastructure.Migrations
                         {
                             Id = "admin-user-id-001",
                             AccessFailedCount = 0,
-                            ConcurrencyStamp = "739eb7e6-344d-4f52-a7e7-ae5bbd22dc24",
+                            ConcurrencyStamp = "824197b3-393f-498e-ac1e-87149880f30c",
                             Email = "admin@studenthousing.com",
                             EmailConfirmed = true,
                             IsActive = true,
@@ -815,9 +812,9 @@ namespace Infrastructure.Migrations
                             LockoutEnabled = false,
                             NormalizedEmail = "ADMIN@STUDENTHOUSING.COM",
                             NormalizedUserName = "ADMIN@STUDENTHOUSING.COM",
-                            PasswordHash = "AQAAAAIAAYagAAAAEMNCgvKl5cgfSoXngzQQVt2QWjfFa7EFLDO3UfIpoK5qUa+ZZoku9pLtWyqTyen07A==",
+                            PasswordHash = "AQAAAAIAAYagAAAAEP1EW/ahq30NGp6Zv+nH2JlB1R25wmydyJDu5hDIFxWueEYcs64KU0eHaOfdTZ3OIQ==",
                             PhoneNumberConfirmed = false,
-                            SecurityStamp = "e3ed5410-3299-4705-8f2f-fd94942aaf52",
+                            SecurityStamp = "0ee8af06-ac3b-499d-9e63-2ee2f7c0fc53",
                             TwoFactorEnabled = false,
                             UserName = "admin@studenthousing.com"
                         });
@@ -1085,16 +1082,10 @@ namespace Infrastructure.Migrations
                     b.HasOne("Domain.Entities.Booking", "Booking")
                         .WithMany()
                         .HasForeignKey("BookingId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.HasOne("Domain.Entities.HousingUnit", "HousingUnit")
-                        .WithMany()
-                        .HasForeignKey("HousingUnitId")
-                        .OnDelete(DeleteBehavior.Restrict);
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
 
                     b.Navigation("Booking");
-
-                    b.Navigation("HousingUnit");
                 });
 
             modelBuilder.Entity("Domain.Entities.HousingUnit", b =>

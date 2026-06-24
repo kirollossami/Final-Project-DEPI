@@ -26,10 +26,22 @@ public class HousingUnitResponse
     public double? AverageRating { get; set; }
     public int ReviewCount { get; set; }
     public string Location { get; set; }
+    public double Latitude { get; set; }
+    public double Longitude { get; set; }
     public int NumberOfRooms { get; set; }
     public bool IsAvailable { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
+}
+
+public class MapPinResponse
+{
+    public Guid HousingUnitId { get; set; }
+    public string Title { get; set; }
+    public double Latitude { get; set; }
+    public double Longitude { get; set; }
+    public decimal Price { get; set; }
+    public bool IsAvailable { get; set; }
 }
 
 public class HousingUnitIndexedResponse : GenericIndexedResponse<HousingUnitResponse>
@@ -55,6 +67,8 @@ public class HousingUnitDetailsResponse
     public double? AverageRating { get; set; }
     public int ReviewCount { get; set; }
     public string Location { get; set; }
+    public double Latitude { get; set; }
+    public double Longitude { get; set; }
     public int NumberOfRooms { get; set; }
     public bool IsAvailable { get; set; }
     public DateTime CreatedAt { get; set; }

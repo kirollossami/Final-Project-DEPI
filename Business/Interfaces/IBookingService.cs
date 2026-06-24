@@ -13,4 +13,5 @@ public interface IBookingService
     Task<List<BookingResponse?>> CreateMultiRoomBookingAsync(MultiRoomBookingCreateRequest request);
     Task<BookingResponse?> UpdateBookingAsync(BookingUpdateRequest request);
     Task<bool> CancelBookingAsync(Guid bookingId);
+    Task MarkBookingAsPaidAsync(Guid bookingId);
 }

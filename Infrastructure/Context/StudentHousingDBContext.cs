@@ -62,5 +62,7 @@ public class StudentHousingDBContext : IdentityDbContext<User>
     public DbSet<UnitImage> UnitImages { get; set; }
     public DbSet<Wishlist> Wishlists { get; set; }
     public DbSet<CommissionRecord> CommissionRecords { get; set; }
+    public DbSet<Conversation> Conversations { get; set; }
+    public DbSet<Message> Messages { get; set; }
 
 }
