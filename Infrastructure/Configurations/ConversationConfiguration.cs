@@ -19,12 +19,19 @@ public class ConversationConfiguration : IEntityTypeConfiguration<Conversation>
             .IsRequired();
 
         builder.HasIndex(c => c.BookingId)
-            .IsUnique();
+            .IsUnique()
+            .HasFilter("[BookingId] IS NOT NULL");
 
         builder.HasOne(c => c.Booking)
             .WithMany()
             .HasForeignKey(c => c.BookingId)
             .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne(c => c.HousingUnit)
+            .WithMany()
+            .HasForeignKey(c => c.HousingUnitId)
+            .OnDelete(DeleteBehavior.Restrict)
+            .IsRequired(false);
 
         builder.HasMany(c => c.Messages)
             .WithOne(m => m.Conversation)

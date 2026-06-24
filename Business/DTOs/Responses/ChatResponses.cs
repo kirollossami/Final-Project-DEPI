@@ -3,7 +3,8 @@ namespace Business.DTOs.Responses;
 public class ConversationResponse
 {
     public Guid ConversationId { get; set; }
-    public Guid BookingId { get; set; }
+    public Guid? BookingId { get; set; }
+    public Guid? HousingUnitId { get; set; }
     public string StudentUserId { get; set; }
     public string LandLordUserId { get; set; }
     public DateTime CreatedAt { get; set; }
