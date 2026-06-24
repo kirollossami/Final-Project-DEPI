@@ -12,15 +12,18 @@ public class ChatService : IChatService
     private readonly IBaseRepository<Conversation> _conversationRepository;
     private readonly IBaseRepository<Message> _messageRepository;
     private readonly IBookingRepository _bookingRepository;
+    private readonly IHousingUnitRepository _housingUnitRepository;
 
     public ChatService(
         IBaseRepository<Conversation> conversationRepository,
         IBaseRepository<Message> messageRepository,
-        IBookingRepository bookingRepository)
+        IBookingRepository bookingRepository,
+        IHousingUnitRepository housingUnitRepository)
     {
         _conversationRepository = conversationRepository;
         _messageRepository = messageRepository;
         _bookingRepository = bookingRepository;
+        _housingUnitRepository = housingUnitRepository;
     }
 
     public async Task<ConversationResponse> GetOrCreateConversationAsync(Guid bookingId, string userId)
@@ -60,12 +63,52 @@ public class ChatService : IChatService
             throw new InvalidOperationException("Booking or associated landlord not found.");
         }
 
+        var housingUnitId = booking.HousingUnitId
+            ?? booking.Room?.HousingUnitId
+            ?? booking.Bed?.Room?.HousingUnitId;
+
         conversation = new Conversation
         {
             ConversationId = Guid.NewGuid(),
             BookingId = bookingId,
+            HousingUnitId = housingUnitId ?? Guid.Empty,
             StudentUserId = booking.Student.UserId,
             LandLordUserId = landLord.UserId,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        await _conversationRepository.Insert(conversation);
+        await _conversationRepository.CommitAsync();
+
+        return MapConversation(conversation);
+    }
+
+    public async Task<ConversationResponse> InitiatePreBookingConversationAsync(Guid housingUnitId, string userId)
+    {
+        var existing = await _conversationRepository.GetAll()
+            .FirstOrDefaultAsync(c => c.HousingUnitId == housingUnitId && c.StudentUserId == userId && c.BookingId == null);
+
+        if (existing != null)
+        {
+            return MapConversation(existing);
+        }
+
+        var housingUnit = await _housingUnitRepository.GetAll()
+            .Include(h => h.LandLord)
+            .FirstOrDefaultAsync(h => h.HousingUnitId == housingUnitId);
+
+        if (housingUnit?.LandLord?.UserId == null)
+        {
+            throw new InvalidOperationException("Housing unit or associated landlord not found.");
+        }
+
+        var conversation = new Conversation
+        {
+            ConversationId = Guid.NewGuid(),
+            BookingId = null,
+            HousingUnitId = housingUnitId,
+            StudentUserId = userId,
+            LandLordUserId = housingUnit.LandLord.UserId,
             CreatedAt = DateTime.UtcNow
         };
 
@@ -200,6 +243,7 @@ public class ChatService : IChatService
         {
             ConversationId = conversation.ConversationId,
             BookingId = conversation.BookingId,
+            HousingUnitId = conversation.HousingUnitId,
             StudentUserId = conversation.StudentUserId,
             LandLordUserId = conversation.LandLordUserId,
             CreatedAt = conversation.CreatedAt

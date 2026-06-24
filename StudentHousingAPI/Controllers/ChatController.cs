@@ -17,6 +17,25 @@ public class ChatController : BaseController
         _chatService = chatService;
     }
 
+    [HttpPost("initiate")]
+    [Authorize(Roles = "Student")]
+    public async Task<IActionResult> InitiateConversation([FromBody] InitiateConversationRequest request)
+    {
+        var userId = GetLoggedId();
+        if (string.IsNullOrEmpty(userId))
+            return Unauthorized();
+
+        try
+        {
+            var result = await _chatService.InitiatePreBookingConversationAsync(request.HousingUnitId, userId);
+            return Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { Message = ex.Message });
+        }
+    }
+
     [HttpGet("conversations/{bookingId}")]
     public async Task<IActionResult> GetConversation(Guid bookingId)
     {
