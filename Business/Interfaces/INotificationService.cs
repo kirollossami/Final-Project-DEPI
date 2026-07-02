@@ -9,4 +9,6 @@ public interface INotificationService
     Task<NotificationIndexedResponse> GetNotificationsAsync(NotificationFilterRequest filter);
     Task<NotificationResponse?> CreateNotificationAsync(NotificationCreateRequest request);
     Task<bool> MarkAsReadAsync(Guid notificationId);
+    Task SendRealTimeNotificationAsync(string userId, string message, string type);
+    Task SendNotificationToRoleAsync(string role, string message, string type);
 }
