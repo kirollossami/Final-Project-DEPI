@@ -457,42 +457,33 @@ public class AuthService : IAuthService
     {
         try
         {
-            var googleClientId = _configuration["Authentication:Google:ClientId"];
-            
-            if (string.IsNullOrEmpty(googleClientId) || googleClientId == "your-google-client-id.apps.googleusercontent.com")
+            // Use provider claims (Provider and ProviderKey) instead of validating an id_token here.
+            if (request == null || string.IsNullOrEmpty(request.Provider) || string.IsNullOrEmpty(request.ProviderKey))
             {
                 return new AuthResponse
                 {
                     Success = false,
-                    Message = "Google OAuth is not configured properly. Please set ClientId in appsettings.json"
+                    Message = "Invalid external login request. Provider and ProviderKey are required."
                 };
             }
 
-            if (string.IsNullOrEmpty(request.IdToken))
+            if (!string.Equals(request.Provider, "Google", StringComparison.OrdinalIgnoreCase))
             {
                 return new AuthResponse
                 {
                     Success = false,
-                    Message = "Google ID token is required."
+                    Message = "Unsupported external provider"
                 };
             }
 
-            var validationSettings = new GoogleJsonWebSignature.ValidationSettings
-            {
-                Audience = new[] { googleClientId }
-            };
-
-            var payload = await GoogleJsonWebSignature.ValidateAsync(request.IdToken, validationSettings);
-
-            // Use Google Subject (user ID) for identification - more reliable than email
-            var googleId = payload.Subject;
+            var googleId = request.ProviderKey;
             var user = await _userManager.Users.FirstOrDefaultAsync(u => u.GoogleId == googleId);
 
             if (user == null)
             {
                 // Check if user exists with same email but no GoogleId (merge accounts)
-                user = await _userManager.FindByEmailAsync(payload.Email);
-                
+                user = await _userManager.FindByEmailAsync(request.Email);
+
                 if (user != null)
                 {
                     // Link existing account with Google
@@ -505,11 +496,12 @@ public class AuthService : IAuthService
                     // Create new user with Google account
                     user = new User
                     {
-                        UserName = payload.Email,
-                        Email = payload.Email,
+                        UserName = request.Email,
+                        Email = request.Email,
                         GoogleId = googleId,
                         IsGoogleUser = true,
-                        IsActive = true
+                        IsActive = true,
+                        ProfileImage = null
                     };
 
                     var createResult = await _userManager.CreateAsync(user);
@@ -525,18 +517,17 @@ public class AuthService : IAuthService
                     await _userManager.AddToRoleAsync(user, "Student");
 
                     // Create Student entity with default values for Google users
-                    // User will need to complete profile later
                     var studentEntity = new Domain.Entities.Student
                     {
                         StudentId = Guid.NewGuid(),
                         UserId = user.Id,
-                        DateOfBirth = DateTime.UtcNow.AddYears(-18), // Default to 18 years ago
-                        Gender = Domain.Enums.Gender.Male, // Default gender
+                        DateOfBirth = DateTime.UtcNow.AddYears(-18),
+                        Gender = Domain.Enums.Gender.Male,
                         Address = null,
                         City = null,
                         PreferredArea = null,
-                        NationalId = "00000000000000", // Placeholder, will be updated during onboarding
-                        IsOnboardingComplete = false // Flag to track onboarding status
+                        NationalId = null,
+                        IsOnboardingComplete = false
                     };
 
                     await _studentRepository.Insert(studentEntity);
@@ -544,7 +535,15 @@ public class AuthService : IAuthService
                 }
             }
 
-            // Check if user has 2FA enabled
+            // Reject login if account has been deactivated
+            if (!user.IsActive)
+            {
+                return new AuthResponse
+                {
+                    Success = false,
+                    Message = "Your account has been deactivated. Please contact support."
+                };
+            }
             if (user.TwoFactorEnabled)
             {
                 return new AuthResponse
@@ -613,14 +612,6 @@ public class AuthService : IAuthService
                     StudentId = studentId,
                     LandLordId = landlordId
                 }
-            };
-        }
-        catch (InvalidJwtException ex)
-        {
-            return new AuthResponse
-            {
-                Success = false,
-                Message = $"Invalid Google token: {ex.Message}"
             };
         }
         catch (Exception ex)
