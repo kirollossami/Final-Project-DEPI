@@ -64,7 +64,7 @@ public class BookingService : IBookingService
             BookingStatus = booking.BookingStatus,
             IsDeleted = booking.IsDeleted,
             CommissionAmount = booking.CommissionRecord?.Amount,
-            ContractId = booking.ContractId,
+            ContractId = booking.ContractId?.ToString(),
             ContractPdfUrl = booking.ContractPdfUrl,
             CreatedAt = booking.CreatedAt,
             UpdatedAt = booking.UpdatedAt
@@ -129,7 +129,7 @@ public class BookingService : IBookingService
                 BookingStatus = b.BookingStatus,
                 IsDeleted = b.IsDeleted,
                 CommissionAmount = b.CommissionRecord?.Amount,
-                ContractId = b.ContractId,
+                ContractId = b.ContractId?.ToString(),
                 ContractPdfUrl = b.ContractPdfUrl,
                 CreatedAt = b.CreatedAt,
                 UpdatedAt = b.UpdatedAt
@@ -187,7 +187,7 @@ public class BookingService : IBookingService
                 BookingStatus = b.BookingStatus,
                 IsDeleted = b.IsDeleted,
                 CommissionAmount = b.CommissionRecord?.Amount,
-                ContractId = b.ContractId,
+                ContractId = b.ContractId?.ToString(),
                 ContractPdfUrl = b.ContractPdfUrl,
                 CreatedAt = b.CreatedAt,
                 UpdatedAt = b.UpdatedAt
@@ -308,7 +308,7 @@ public class BookingService : IBookingService
             BookingStatus = booking.BookingStatus,
             IsDeleted = booking.IsDeleted,
             CommissionAmount = commissionAmount,
-            ContractId = booking.ContractId,
+            ContractId = booking.ContractId?.ToString(),
             ContractPdfUrl = booking.ContractPdfUrl,
             CreatedAt = booking.CreatedAt,
             UpdatedAt = booking.UpdatedAt
@@ -356,7 +356,7 @@ public class BookingService : IBookingService
             BookingStatus = booking.BookingStatus,
             IsDeleted = booking.IsDeleted,
             CommissionAmount = booking.CommissionRecord?.Amount,
-            ContractId = booking.ContractId,
+            ContractId = booking.ContractId?.ToString(),
             ContractPdfUrl = booking.ContractPdfUrl,
             CreatedAt = booking.CreatedAt,
             UpdatedAt = booking.UpdatedAt
