@@ -20,5 +20,7 @@ namespace Domain.Entities
     public string? ClientSecret { get; set; }
     public DateTime? CompletedAt { get; set; }
     public virtual Booking? Booking { get; set; }
+    public virtual ICollection<PaymentTransaction> PaymentTransactions { get; set; } = new List<PaymentTransaction>();
+    public virtual ICollection<PaymentReceipt> PaymentReceipts { get; set; } = new List<PaymentReceipt>();
     }
 }

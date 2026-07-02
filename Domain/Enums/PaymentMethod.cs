@@ -11,6 +11,7 @@ namespace Domain.Enums
         InstaPay,
         VodafoneCash,
         Cash,
-        CreditCard
+        CreditCard,
+        Card
     }
 }

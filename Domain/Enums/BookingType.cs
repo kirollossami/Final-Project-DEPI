@@ -4,6 +4,8 @@ namespace Domain.Enums
     {
         Bed,
         Room,
-        Unit
+        Unit,
+        Monthly,
+        Yearly
     }
 }

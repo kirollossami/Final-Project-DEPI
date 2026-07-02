@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Identity;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -14,8 +14,7 @@ namespace Domain.Entities
         public string? ProfileImage { get; set; }
         public string? GoogleId { get; set; }
         public bool IsGoogleUser { get; set; }
-        public bool TwoFactorEnabled { get; set; }
-        public string? TwoFactorSecret { get; set; }
+        public string? TwoFactorSecret { get; set; } // Custom TOTP secret; IdentityUser.TwoFactorEnabled is used for the enabled flag
         public virtual List<Notification> Notifications { get; set; } = null!;
     }
 }

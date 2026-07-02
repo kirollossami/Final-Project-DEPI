@@ -64,5 +64,10 @@ public class StudentHousingDBContext : IdentityDbContext<User>
     public DbSet<CommissionRecord> CommissionRecords { get; set; }
     public DbSet<Conversation> Conversations { get; set; }
     public DbSet<Message> Messages { get; set; }
+    public DbSet<Contract> Contracts { get; set; }
+    public DbSet<PaymentTransaction> PaymentTransactions { get; set; }
+    public DbSet<EscrowTransaction> EscrowTransactions { get; set; }
+    public DbSet<PaymentReceipt> PaymentReceipts { get; set; }
+    public DbSet<PaymentHistory> PaymentHistories { get; set; }
 
 }
