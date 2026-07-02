@@ -20,7 +20,7 @@ namespace Domain.Entities
         public decimal TotalPrice { get; set; }
         public BookingStatus BookingStatus { get; set; }
         public bool IsDeleted { get; set; } = false;
-        public string? ContractId { get; set; }
+        public Guid? ContractId { get; set; }
         public string? ContractPdfUrl { get; set; }
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime? UpdatedAt { get; set; }
@@ -31,5 +31,6 @@ namespace Domain.Entities
         public virtual HousingUnit? HousingUnit { get; set; }
         public virtual Payment? Payment { get; set; }
         public virtual CommissionRecord? CommissionRecord { get; set; }
+        public virtual Contract? Contract { get; set; }
     }
 }
