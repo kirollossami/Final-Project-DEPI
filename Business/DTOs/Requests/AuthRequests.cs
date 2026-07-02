@@ -21,8 +21,19 @@ public class LoginRequest
 /// </summary>
 public class GoogleLoginRequest
 {
+    // Provider name (e.g. "Google")
     [Required]
-    public string? IdToken { get; set; }
+    public string? Provider { get; set; }
+
+    // Provider user id / subject (e.g. Google subject / sub)
+    [Required]
+    public string? ProviderKey { get; set; }
+
+    [Required]
+    [EmailAddress]
+    public string? Email { get; set; }
+
+    public string? Name { get; set; }
 }
 
 /// <summary>
