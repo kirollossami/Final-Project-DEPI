@@ -19,9 +19,6 @@ public class BookingConfiguration : IEntityTypeConfiguration<Booking>
         builder.Property(b => b.BookingStatus)
             .HasConversion<string>();
 
-        builder.Property(b => b.ContractId)
-            .HasMaxLength(100);
-
         builder.Property(b => b.ContractPdfUrl)
             .HasMaxLength(500);
 
@@ -48,6 +45,11 @@ public class BookingConfiguration : IEntityTypeConfiguration<Booking>
         builder.HasOne(b => b.Payment)
             .WithOne(p => p.Booking)
             .HasForeignKey<Payment>(p => p.BookingId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne(b => b.Contract)
+            .WithOne(c => c.Booking)
+            .HasForeignKey<Contract>(c => c.BookingId)
             .OnDelete(DeleteBehavior.Restrict);
     }
 }

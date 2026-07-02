@@ -11,7 +11,7 @@ namespace Infrastructure.Repositories.Base;
 public class BaseRepository<T> : IBaseRepository<T> where T : class
 {
     internal readonly StudentHousingDBContext context;
-    private DbSet<T> entities;
+    protected DbSet<T> entities;
     public BaseRepository(StudentHousingDBContext context)
     {
         this.context = context;
