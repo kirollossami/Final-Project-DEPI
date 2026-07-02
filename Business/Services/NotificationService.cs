@@ -111,4 +111,31 @@ public class NotificationService : INotificationService
 
         return true;
     }
+
+    public async Task SendRealTimeNotificationAsync(string userId, string message, string type)
+    {
+        // Save to database
+        var notification = new Domain.Entities.Notification
+        {
+            NotificationId = Guid.NewGuid(),
+            UserId = userId,
+            Message = message,
+            Type = type,
+            IsSeen = false,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        await _notificationRepository.Insert(notification);
+        await _notificationRepository.CommitAsync();
+        
+        // Note: SignalR integration should be handled in the API layer
+        // This service only handles database persistence
+    }
+
+    public async Task SendNotificationToRoleAsync(string role, string message, string type)
+    {
+        // Note: Role-based notifications should be handled in the API layer
+        // This service only handles database persistence
+        await Task.CompletedTask;
+    }
 }

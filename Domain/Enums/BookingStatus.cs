@@ -9,10 +9,17 @@ namespace Domain.Enums
     public enum BookingStatus
     {
         Pending,
+        PaymentPending,
+        PaymentProcessing,
+        ContractGenerationPending,
+        AwaitingStudentSignature,
+        AwaitingOwnerSignature,
+        AwaitingAdminApproval,
         Approved,
         Active,
         Completed,
         Rejected,
-        Cancelled
+        Cancelled,
+        SuccessfullyConfirmed
     }
 }

@@ -1,7 +1,9 @@
-﻿using Business.DTOs.Requests;
+using Business.DTOs.Requests;
 using Business.DTOs.Responses;
 using Business.Interfaces;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authentication.Google;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -12,10 +14,12 @@ namespace StudentHousingAPI.Controllers;
 public class AccountController : Controller
 {
     private readonly IAuthService authService;
+    private readonly IConfiguration _configuration;
 
-    public AccountController(IAuthService authService)
+    public AccountController(IAuthService authService, IConfiguration configuration)
     {
         this.authService = authService;
+        _configuration = configuration;
     }
 
     [HttpPost("login")]
@@ -31,57 +35,126 @@ public class AccountController : Controller
     }
 
     [HttpGet("google-challenge")]
-    public IActionResult GoogleChallenge()
+    [AllowAnonymous]
+    public IActionResult GoogleChallenge([FromQuery] string returnUrl = null)
     {
+        var callbackUrl = Url.Action(nameof(GoogleCallback), "Account", null, Request.Scheme);
         var properties = new AuthenticationProperties
         {
-            RedirectUri = Url.Action(nameof(GoogleCallback)),
+            RedirectUri = callbackUrl,
             Items = { { "scheme", "Google" } }
         };
 
-        return Challenge(properties, "Google");
+        // Secure returnUrl validation to prevent open-redirect vulnerabilities
+        if (!string.IsNullOrEmpty(returnUrl) && IsSafeRedirectUrl(returnUrl))
+        {
+            properties.Items["returnUrl"] = returnUrl;
+        }
+        else
+        {
+            var allowedOrigins = _configuration.GetSection("AllowedOrigins").Get<string[]>();
+            var defaultFrontend = allowedOrigins?.FirstOrDefault() ?? "http://localhost:4200";
+            properties.Items["returnUrl"] = defaultFrontend;
+        }
+
+        return Challenge(properties, GoogleDefaults.AuthenticationScheme);
     }
 
     [HttpGet("google-callback")]
+    [AllowAnonymous]
     public async Task<IActionResult> GoogleCallback()
     {
-        var authenticateResult = await HttpContext.AuthenticateAsync("Google");
+        var authenticateResult = await HttpContext.AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+
+        var acceptHeader = Request.Headers["Accept"].ToString() ?? string.Empty;
+        bool isBrowserNavigation = acceptHeader.Contains("text/html");
+
+        var allowedOrigins = _configuration.GetSection("AllowedOrigins").Get<string[]>();
+        var frontendUrl = allowedOrigins?.FirstOrDefault() ?? "http://localhost:4200";
+        frontendUrl = frontendUrl.TrimEnd('/');
+
+        // Determine where to redirect back on success or error
+        var returnUrl = authenticateResult.Properties?.Items.TryGetValue("returnUrl", out var rUrl) == true ? rUrl : null;
+        var targetRedirectUrl = !string.IsNullOrEmpty(returnUrl) ? returnUrl : $"{frontendUrl}/login";
+
+        string getRedirectUrlWithError(string errorName)
+        {
+            var separator = targetRedirectUrl.Contains("?") ? "&" : "?";
+            return $"{targetRedirectUrl}{separator}error={Uri.EscapeDataString(errorName)}";
+        }
+
+        string getRedirectUrlWithTokens(string token, string rToken)
+        {
+            var separator = targetRedirectUrl.Contains("?") ? "&" : "?";
+            return $"{targetRedirectUrl}{separator}success=true&token={Uri.EscapeDataString(token)}&refreshToken={Uri.EscapeDataString(rToken)}";
+        }
 
         if (!authenticateResult.Succeeded)
         {
-            return Redirect("/login?error=google_auth_failed");
+            if (isBrowserNavigation)
+            {
+                return Redirect(getRedirectUrlWithError("google_auth_failed"));
+            }
+            return BadRequest(new { error = "Google authentication failed. Please login using the google-challenge endpoint in a browser." });
         }
+
+        // External claims will be validated below (email/provider key)
+
+        // Extract claims from the external principal (do not rely on id_token)
+        var provider = "Google";
+        var providerKey = authenticateResult.Principal.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+                          ?? authenticateResult.Principal.FindFirst("sub")?.Value;
 
         var email = authenticateResult.Principal.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value;
         var name = authenticateResult.Principal.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value;
 
-        if (string.IsNullOrEmpty(email))
+        if (string.IsNullOrEmpty(providerKey) || string.IsNullOrEmpty(email))
         {
-            return Redirect("/login?error=no_email_provided");
+            if (isBrowserNavigation)
+            {
+                return Redirect(getRedirectUrlWithError("missing_external_claims"));
+            }
+            return BadRequest(new { error = "Required external claims (provider key or email) are missing." });
         }
 
-        // Get the Google ID token from the authentication result
-        var idToken = authenticateResult.Properties.GetTokenValue("id_token");
-
-        if (string.IsNullOrEmpty(idToken))
+        // Call the Google login service using claims (server-side will create or link account and issue JWT)
+        var response = await authService.GoogleLoginAsync(new GoogleLoginRequest
         {
-            return Redirect("/login?error=no_id_token");
-        }
-
-        // Call the Google login service with the ID token
-        var response = await authService.GoogleLoginAsync(new GoogleLoginRequest { IdToken = idToken });
+            Provider = provider,
+            ProviderKey = providerKey,
+            Email = email,
+            Name = name
+        });
 
         if (!response.Success)
         {
-            return Redirect($"/login?error={Uri.EscapeDataString(response.Message ?? "google_login_failed")}");
+            if (isBrowserNavigation)
+            {
+                return Redirect(getRedirectUrlWithError(response.Message ?? "google_login_failed"));
+            }
+            return BadRequest(new { error = response.Message ?? "Google login failed." });
+        }
+
+        // Handle 2FA required scenario
+        if (response.RequiresTwoFactor)
+        {
+            if (isBrowserNavigation)
+            {
+                var verify2faUrl = $"{frontendUrl}/login/verify-2fa?email={Uri.EscapeDataString(email)}&returnUrl={Uri.EscapeDataString(targetRedirectUrl)}";
+                return Redirect(verify2faUrl);
+            }
+            return Ok(response);
         }
 
         // Redirect to frontend with the tokens as query parameters
-        // In production, you might want to use a different approach like setting cookies or using a secure token exchange
         var accessToken = response.Token?.AccessToken;
         var refreshToken = response.Token?.RefreshToken;
         
-        return Redirect($"/login?success=true&token={Uri.EscapeDataString(accessToken ?? "")}&refreshToken={Uri.EscapeDataString(refreshToken ?? "")}");
+        if (isBrowserNavigation)
+        {
+            return Redirect(getRedirectUrlWithTokens(accessToken ?? "", refreshToken ?? ""));
+        }
+        return Ok(response);
     }
 
     [HttpPost("google-login")]
@@ -173,6 +246,26 @@ public class AccountController : Controller
         return Ok(result);
     }
 
+    [HttpPost("forgot-password")]
+    [AllowAnonymous]
+    public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordRequest request)
+    {
+        var result = await authService.ForgotPasswordAsync(request);
+        if (!result.Success)
+            return BadRequest(result);
+        return Ok(result);
+    }
+
+    [HttpPost("reset-password")]
+    [AllowAnonymous]
+    public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordRequest request)
+    {
+        var result = await authService.ResetPasswordAsync(request);
+        if (!result.Success)
+            return BadRequest(result);
+        return Ok(result);
+    }
+
     [HttpPost("2fa/setup")]
     [ProducesResponseType(typeof(TwoFactorSetupResponse), StatusCodes.Status200OK)]
     public async Task<IActionResult> SetupTwoFactor([FromBody] string email)
@@ -212,5 +305,27 @@ public class AccountController : Controller
             return BadRequest(response);
 
         return Ok(response);
+    }
+
+    private bool IsSafeRedirectUrl(string url)
+    {
+        if (string.IsNullOrEmpty(url)) return false;
+
+        if (Url.IsLocalUrl(url)) return true;
+
+        var allowedOrigins = _configuration.GetSection("AllowedOrigins").Get<string[]>() ?? new[] { "http://localhost:4200" };
+        if (Uri.TryCreate(url, UriKind.Absolute, out var uri))
+        {
+            var origin = $"{uri.Scheme}://{uri.Authority}";
+            foreach (var allowedOrigin in allowedOrigins)
+            {
+                if (allowedOrigin.TrimEnd('/').Equals(origin.TrimEnd('/'), StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 }

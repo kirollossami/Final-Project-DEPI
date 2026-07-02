@@ -13,11 +13,16 @@ public class LandLordService : ILandLordService
 {
     private readonly ILandLordRepository _landLordRepository;
     private readonly UserManager<User> _userManager;
+    private readonly IFileStorageService _fileStorageService;
 
-    public LandLordService(ILandLordRepository landLordRepository, UserManager<User> userManager)
+    public LandLordService(
+        ILandLordRepository landLordRepository,
+        UserManager<User> userManager,
+        IFileStorageService fileStorageService)
     {
         _landLordRepository = landLordRepository;
         _userManager = userManager;
+        _fileStorageService = fileStorageService;
     }
 
     public async Task<LandLordResponse?> GetLandLordByIdAsync(Guid landLordId)
@@ -34,7 +39,13 @@ public class LandLordService : ILandLordService
             UserId = landlord.UserId.ToString(),
             CompanyName = landlord.CompanyName,
             NationalId = landlord.NationalId,
-            VerificationStatus = landlord.VerificationStatus.ToString()
+            NationalIdImageUrl = landlord.NationalIdImageUrl,
+            PropertyOwnerShipProof = landlord.PropertyOwnerShipProof,
+            HousingUnitDocumentationUrl = landlord.HousingUnitDocumentationUrl,
+            VerificationStatus = landlord.VerificationStatus.ToString(),
+            IsVerified = landlord.IsVerified,
+            CreatedAt = landlord.CreatedAt,
+            UpdatedAt = landlord.UpdatedAt
         };
     }
 
@@ -66,7 +77,13 @@ public class LandLordService : ILandLordService
                 UserId = l.UserId,
                 CompanyName = l.CompanyName,
                 NationalId = l.NationalId,
-                VerificationStatus = l.VerificationStatus
+                NationalIdImageUrl = l.NationalIdImageUrl,
+                PropertyOwnerShipProof = l.PropertyOwnerShipProof,
+                HousingUnitDocumentationUrl = l.HousingUnitDocumentationUrl,
+                VerificationStatus = l.VerificationStatus,
+                IsVerified = l.IsVerified,
+                CreatedAt = l.CreatedAt,
+                UpdatedAt = l.UpdatedAt
             }).ToList(),
             TotalRecords = totalCount,
             PageIndex = filter.PageNumber - 1,
@@ -85,6 +102,11 @@ public class LandLordService : ILandLordService
         if (request.CompanyName != null)
         {
             landlord.CompanyName = request.CompanyName;
+        }
+
+        if (request.PropertyOwnerShipProof != null)
+        {
+            landlord.PropertyOwnerShipProof = request.PropertyOwnerShipProof;
         }
 
         await _landLordRepository.Update(landlord);
@@ -157,11 +179,189 @@ public class LandLordService : ILandLordService
         return true;
     }
 
-    public async Task<bool> ValidateNationalIdAsync(string nationalId)
+    public async Task<string> GetAccountStatusAsync(string userId)
     {
-        var existingLandlord = await _landLordRepository.GetAll()
-            .FirstOrDefaultAsync(l => l.NationalId == nationalId);
+        var landlord = await _landLordRepository.GetAll()
+            .FirstOrDefaultAsync(l => l.UserId == userId);
         
-        return existingLandlord == null;
+        if (landlord == null)
+            return "Not Found";
+        
+        return landlord.VerificationStatus;
+    }
+
+    public async Task<bool> IsLandlordVerifiedAsync(Guid landlordId)
+    {
+        var landlord = await _landLordRepository.GetAsync(landlordId);
+        return landlord != null && landlord.IsVerified;
+    }
+
+    public async Task<bool> IsLandlordVerifiedByUserIdAsync(string userId)
+    {
+        var landlord = await _landLordRepository.GetAll()
+            .FirstOrDefaultAsync(l => l.UserId == userId);
+        return landlord != null && landlord.IsVerified;
+    }
+
+    public async Task<LandLordResponse?> CreateLandLordAsync(LandLordRegisterRequest request)
+    {
+        var user = new User
+        {
+            UserName = request.Email,
+            Email = request.Email,
+            PhoneNumber = request.PhoneNumber
+        };
+
+        var result = await _userManager.CreateAsync(user, request.Password);
+        if (!result.Succeeded)
+            return null;
+
+        var landlord = new Domain.Entities.LandLord
+        {
+            LandLordId = Guid.NewGuid(),
+            UserId = user.Id,
+            CompanyName = request.CompanyName,
+            NationalId = request.NationalId,
+            NationalIdImageUrl = string.Empty,
+            PropertyOwnerShipProof = request.PropertyOwnerShipProof,
+            HousingUnitDocumentationUrl = string.Empty,
+            VerificationStatus = "Pending",
+            IsVerified = false,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        await _landLordRepository.Insert(landlord);
+        await _landLordRepository.CommitAsync();
+
+        return new LandLordResponse
+        {
+            LandLordId = landlord.LandLordId,
+            UserId = landlord.UserId.ToString(),
+            CompanyName = landlord.CompanyName,
+            NationalId = landlord.NationalId,
+            NationalIdImageUrl = landlord.NationalIdImageUrl,
+            PropertyOwnerShipProof = landlord.PropertyOwnerShipProof,
+            HousingUnitDocumentationUrl = landlord.HousingUnitDocumentationUrl,
+            VerificationStatus = landlord.VerificationStatus.ToString(),
+            IsVerified = landlord.IsVerified,
+            CreatedAt = landlord.CreatedAt,
+            UpdatedAt = landlord.UpdatedAt
+        };
+    }
+
+    public async Task ChangePasswordAsync(string userId, ChangePasswordRequest request)
+    {
+        var landlord = await _landLordRepository.GetAll()
+            .FirstOrDefaultAsync(l => l.UserId == userId);
+
+        if (landlord == null || landlord.User == null)
+            throw new Exception("Landlord not found");
+
+        var result = await _userManager.ChangePasswordAsync(landlord.User, request.CurrentPassword, request.NewPassword);
+        if (!result.Succeeded)
+            throw new Exception(string.Join(", ", result.Errors.Select(e => e.Description)));
+    }
+
+    public async Task<LandLordResponse?> SubmitHousingUnitDocumentationAsync(
+        string userId, SubmitHousingUnitDocumentationRequest request, Stream fileStream, string fileName)
+    {
+        var landlord = await _landLordRepository.GetAll()
+            .FirstOrDefaultAsync(l => l.UserId == userId);
+
+        if (landlord == null) return null;
+
+        if (fileStream == null || fileStream.Length == 0) return null;
+
+        var allowedExtensions = new[] { ".jpg", ".jpeg", ".png", ".pdf" };
+        var fileExtension = Path.GetExtension(fileName).ToLowerInvariant();
+        
+        if (!allowedExtensions.Contains(fileExtension))
+            return null;
+
+        var filePath = await _fileStorageService.SaveFileAsync(fileStream, fileName, "documentation");
+        if (filePath == null) return null;
+
+        landlord.HousingUnitDocumentationUrl = filePath;
+        landlord.UpdatedAt = DateTime.UtcNow;
+        
+        // Set status to Under Review if both documents are uploaded, otherwise Pending
+        if (!string.IsNullOrEmpty(landlord.NationalIdImageUrl) && !string.IsNullOrEmpty(landlord.HousingUnitDocumentationUrl))
+        {
+            landlord.VerificationStatus = "Under Review";
+        }
+        else
+        {
+            landlord.VerificationStatus = "Pending";
+        }
+        landlord.IsVerified = false;
+        
+        await _landLordRepository.Update(landlord);
+        await _landLordRepository.CommitAsync();
+
+        return new LandLordResponse
+        {
+            LandLordId = landlord.LandLordId,
+            UserId = landlord.UserId.ToString(),
+            CompanyName = landlord.CompanyName,
+            NationalId = landlord.NationalId,
+            NationalIdImageUrl = landlord.NationalIdImageUrl,
+            PropertyOwnerShipProof = landlord.PropertyOwnerShipProof,
+            HousingUnitDocumentationUrl = landlord.HousingUnitDocumentationUrl,
+            VerificationStatus = landlord.VerificationStatus.ToString(),
+            IsVerified = landlord.IsVerified,
+            CreatedAt = landlord.CreatedAt,
+            UpdatedAt = landlord.UpdatedAt
+        };
+    }
+
+    public async Task<LandLordResponse?> UploadNationalIdAsync(string userId, Stream fileStream, string fileName)
+    {
+        var landlord = await _landLordRepository.GetAll()
+            .FirstOrDefaultAsync(l => l.UserId == userId);
+
+        if (landlord == null) return null;
+
+        if (fileStream == null || fileStream.Length == 0) return null;
+
+        var allowedExtensions = new[] { ".jpg", ".jpeg", ".png", ".pdf" };
+        var fileExtension = Path.GetExtension(fileName).ToLowerInvariant();
+        
+        if (!allowedExtensions.Contains(fileExtension))
+            return null;
+
+        var filePath = await _fileStorageService.SaveFileAsync(fileStream, fileName, "national-id");
+        if (filePath == null) return null;
+
+        landlord.NationalIdImageUrl = filePath;
+        landlord.UpdatedAt = DateTime.UtcNow;
+        
+        // Set status to Under Review if both documents are uploaded, otherwise Pending
+        if (!string.IsNullOrEmpty(landlord.NationalIdImageUrl) && !string.IsNullOrEmpty(landlord.HousingUnitDocumentationUrl))
+        {
+            landlord.VerificationStatus = "Under Review";
+        }
+        else
+        {
+            landlord.VerificationStatus = "Pending";
+        }
+        landlord.IsVerified = false;
+        
+        await _landLordRepository.Update(landlord);
+        await _landLordRepository.CommitAsync();
+
+        return new LandLordResponse
+        {
+            LandLordId = landlord.LandLordId,
+            UserId = landlord.UserId.ToString(),
+            CompanyName = landlord.CompanyName,
+            NationalId = landlord.NationalId,
+            NationalIdImageUrl = landlord.NationalIdImageUrl,
+            PropertyOwnerShipProof = landlord.PropertyOwnerShipProof,
+            HousingUnitDocumentationUrl = landlord.HousingUnitDocumentationUrl,
+            VerificationStatus = landlord.VerificationStatus.ToString(),
+            IsVerified = landlord.IsVerified,
+            CreatedAt = landlord.CreatedAt,
+            UpdatedAt = landlord.UpdatedAt
+        };
     }
 }

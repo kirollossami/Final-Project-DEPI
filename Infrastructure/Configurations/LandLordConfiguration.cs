@@ -14,6 +14,9 @@ public class LandLordConfiguration : IEntityTypeConfiguration<LandLord>
             .HasMaxLength(20)
             .IsRequired();
 
+        builder.Property(l => l.NationalIdImageUrl)
+            .HasMaxLength(500);
+
         builder.Property(l => l.CompanyName)
             .HasMaxLength(200);
 
@@ -21,9 +24,15 @@ public class LandLordConfiguration : IEntityTypeConfiguration<LandLord>
             .HasMaxLength(500)
             .IsRequired();
 
+        builder.Property(l => l.HousingUnitDocumentationUrl)
+            .HasMaxLength(500);
+
         builder.Property(l => l.VerificationStatus)
             .HasMaxLength(50)
             .IsRequired();
+
+        builder.Property(l => l.IsVerified)
+            .HasDefaultValue(false);
 
         builder.HasOne(l => l.User)
             .WithMany()

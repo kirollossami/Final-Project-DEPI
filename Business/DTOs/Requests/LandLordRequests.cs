@@ -21,6 +21,9 @@ public class UpdateLandLordRequest
 {
     public Guid LandLordId { get; set; }
     public string? CompanyName { get; set; }
+    public string? PropertyOwnerShipProof { get; set; }
+    public string? NationalIdImageUrl { get; set; }
+    public string? HousingUnitDocumentationUrl { get; set; }
 }
 
 /// <summary>
@@ -33,6 +36,15 @@ public class UploadProofRequest
 }
 
 /// <summary>
+/// Request model for submitting housing unit documentation
+/// </summary>
+public class SubmitHousingUnitDocumentationRequest
+{
+    public string? DocumentType { get; set; }
+    public string? Description { get; set; }
+}
+
+/// <summary>
 /// Request model for filtering/searching landlords
 /// </summary>
 public class LandLordFilterRequest
@@ -41,4 +53,12 @@ public class LandLordFilterRequest
     public string? VerificationStatus { get; set; }
     public int PageNumber { get; set; } = 1;
     public int PageSize { get; set; } = 10;
+}
+
+/// <summary>
+/// Request model for updating landlord verification status
+/// </summary>
+public class UpdateLandlordVerificationStatusRequest
+{
+    public string Status { get; set; } = "Pending";
 }

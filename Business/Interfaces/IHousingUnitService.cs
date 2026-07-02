@@ -10,4 +10,6 @@ public interface IHousingUnitService
     Task<HousingUnitResponse?> CreateHousingUnitAsync(HousingUnitCreateRequest request);
     Task<HousingUnitResponse?> UpdateHousingUnitAsync(HousingUnitUpdateRequest request);
     Task<bool> DeleteHousingUnitAsync(Guid housingUnitId);
+    Task<HousingUnitDetailsResponse?> GetHousingUnitDetailsAsync(Guid housingUnitId);
+    Task<List<MapPinResponse>> GetMapPinsAsync();
 }

@@ -10,10 +10,12 @@ namespace Business.Services;
 public class HousingUnitService : IHousingUnitService
 {
     private readonly IHousingUnitRepository _housingUnitRepository;
+    private readonly ILandLordService _landLordService;
 
-    public HousingUnitService(IHousingUnitRepository housingUnitRepository)
+    public HousingUnitService(IHousingUnitRepository housingUnitRepository, ILandLordService landLordService)
     {
         _housingUnitRepository = housingUnitRepository;
+        _landLordService = landLordService;
     }
 
     public async Task<HousingUnitResponse?> GetHousingUnitByIdAsync(Guid housingUnitId)
@@ -31,15 +33,40 @@ public class HousingUnitService : IHousingUnitService
             City = housingUnit.City,
             Area = housingUnit.Area,
             Price = housingUnit.Price,
+            BaseMonthlyPrice = housingUnit.BaseMonthlyPrice,
             UnitImageUrl = housingUnit.UnitImageUrl,
+            VideoUrl = housingUnit.VideoUrl,
             GenderAllowed = housingUnit.GenderAllowed,
             Rules = housingUnit.Rules,
             Location = housingUnit.Location,
+            Latitude = housingUnit.Latitude,
+            Longitude = housingUnit.Longitude,
             NumberOfRooms = housingUnit.NumberOfRooms,
             IsAvailable = housingUnit.IsAvailable,
             AverageRating = housingUnit.AverageRating,
-            ReviewCount = housingUnit.ReviewCount
+            ReviewCount = housingUnit.ReviewCount,
+            IsDeleted = housingUnit.IsDeleted,
+            CreatedAt = housingUnit.CreatedAt,
+            UpdatedAt = housingUnit.UpdatedAt
         };
+    }
+
+    public async Task<List<MapPinResponse>> GetMapPinsAsync()
+    {
+        var units = await _housingUnitRepository.GetAll()
+            .Where(h => !h.IsDeleted)
+            .Select(h => new MapPinResponse
+            {
+                HousingUnitId = h.HousingUnitId,
+                Title = h.Title,
+                Latitude = h.Latitude,
+                Longitude = h.Longitude,
+                Price = h.Price,
+                IsAvailable = h.IsAvailable
+            })
+            .ToListAsync();
+
+        return units;
     }
 
     public async Task<HousingUnitIndexedResponse> GetHousingUnitsAsync(HousingUnitFilterRequest filter)
@@ -99,14 +126,21 @@ public class HousingUnitService : IHousingUnitService
                 City = h.City,
                 Area = h.Area,
                 Price = h.Price,
+                BaseMonthlyPrice = h.BaseMonthlyPrice,
                 UnitImageUrl = h.UnitImageUrl,
+                VideoUrl = h.VideoUrl,
                 GenderAllowed = h.GenderAllowed,
                 Rules = h.Rules,
                 Location = h.Location,
+                Latitude = h.Latitude,
+                Longitude = h.Longitude,
                 NumberOfRooms = h.NumberOfRooms,
                 IsAvailable = h.IsAvailable,
                 AverageRating = h.AverageRating,
-                ReviewCount = h.ReviewCount
+                ReviewCount = h.ReviewCount,
+                IsDeleted = h.IsDeleted,
+                CreatedAt = h.CreatedAt,
+                UpdatedAt = h.UpdatedAt
             }).ToList(),
             TotalRecords = totalCount,
             PageIndex = filter.PageNumber - 1,
@@ -116,6 +150,13 @@ public class HousingUnitService : IHousingUnitService
 
     public async Task<HousingUnitResponse?> CreateHousingUnitAsync(HousingUnitCreateRequest request)
     {
+        // Check if landlord is verified
+        var isVerified = await _landLordService.IsLandlordVerifiedAsync(request.LandLordId);
+        if (!isVerified)
+        {
+            return null;
+        }
+
         var housingUnit = new Domain.Entities.HousingUnit
         {
             HousingUnitId = Guid.NewGuid(),
@@ -126,15 +167,20 @@ public class HousingUnitService : IHousingUnitService
             City = request.City,
             Area = request.Area,
             Price = request.Price,
+            BaseMonthlyPrice = request.BaseMonthlyPrice,
             UnitImageUrl = request.UnitImageUrl,
+            VideoUrl = request.VideoUrl,
             GenderAllowed = request.GenderAllowed,
             Rules = request.Rules,
             Location = request.Location,
+            Latitude = request.Latitude,
+            Longitude = request.Longitude,
             NumberOfRooms = request.NumberOfRooms,
             IsAvailable = request.IsAvailable,
             AverageRating = 0,
             ReviewCount = 0,
-            IsDeleted = false
+            IsDeleted = false,
+            CreatedAt = DateTime.UtcNow
         };
 
         await _housingUnitRepository.Insert(housingUnit);
@@ -150,14 +196,21 @@ public class HousingUnitService : IHousingUnitService
             City = housingUnit.City,
             Area = housingUnit.Area,
             Price = housingUnit.Price,
+            BaseMonthlyPrice = housingUnit.BaseMonthlyPrice,
             UnitImageUrl = housingUnit.UnitImageUrl,
+            VideoUrl = housingUnit.VideoUrl,
             GenderAllowed = housingUnit.GenderAllowed,
             Rules = housingUnit.Rules,
             Location = housingUnit.Location,
+            Latitude = housingUnit.Latitude,
+            Longitude = housingUnit.Longitude,
             NumberOfRooms = housingUnit.NumberOfRooms,
             IsAvailable = housingUnit.IsAvailable,
             AverageRating = housingUnit.AverageRating,
-            ReviewCount = housingUnit.ReviewCount
+            ReviewCount = housingUnit.ReviewCount,
+            IsDeleted = housingUnit.IsDeleted,
+            CreatedAt = housingUnit.CreatedAt,
+            UpdatedAt = housingUnit.UpdatedAt
         };
     }
 
@@ -165,6 +218,13 @@ public class HousingUnitService : IHousingUnitService
     {
         var housingUnit = await _housingUnitRepository.GetAsync(request.HousingUnitId);
         if (housingUnit == null) return null;
+
+        // Check if landlord is verified
+        var isVerified = await _landLordService.IsLandlordVerifiedAsync(housingUnit.LandLordId);
+        if (!isVerified)
+        {
+            return null;
+        }
 
         if (request.Title != null)
         {
@@ -196,9 +256,19 @@ public class HousingUnitService : IHousingUnitService
             housingUnit.Price = request.Price.Value;
         }
 
+        if (request.BaseMonthlyPrice.HasValue)
+        {
+            housingUnit.BaseMonthlyPrice = request.BaseMonthlyPrice.Value;
+        }
+
         if (request.UnitImageUrl != null)
         {
             housingUnit.UnitImageUrl = request.UnitImageUrl;
+        }
+
+        if (request.VideoUrl != null)
+        {
+            housingUnit.VideoUrl = request.VideoUrl;
         }
 
         if (request.GenderAllowed.HasValue)
@@ -216,6 +286,16 @@ public class HousingUnitService : IHousingUnitService
             housingUnit.Location = request.Location;
         }
 
+        if (request.Latitude.HasValue)
+        {
+            housingUnit.Latitude = request.Latitude.Value;
+        }
+
+        if (request.Longitude.HasValue)
+        {
+            housingUnit.Longitude = request.Longitude.Value;
+        }
+
         if (request.NumberOfRooms.HasValue)
         {
             housingUnit.NumberOfRooms = request.NumberOfRooms.Value;
@@ -225,6 +305,8 @@ public class HousingUnitService : IHousingUnitService
         {
             housingUnit.IsAvailable = request.IsAvailable.Value;
         }
+
+        housingUnit.UpdatedAt = DateTime.UtcNow;
 
         _housingUnitRepository.Update(housingUnit);
         await _housingUnitRepository.CommitAsync();
@@ -239,14 +321,21 @@ public class HousingUnitService : IHousingUnitService
             City = housingUnit.City,
             Area = housingUnit.Area,
             Price = housingUnit.Price,
+            BaseMonthlyPrice = housingUnit.BaseMonthlyPrice,
             UnitImageUrl = housingUnit.UnitImageUrl,
+            VideoUrl = housingUnit.VideoUrl,
             GenderAllowed = housingUnit.GenderAllowed,
             Rules = housingUnit.Rules,
             Location = housingUnit.Location,
+            Latitude = housingUnit.Latitude,
+            Longitude = housingUnit.Longitude,
             NumberOfRooms = housingUnit.NumberOfRooms,
             IsAvailable = housingUnit.IsAvailable,
             AverageRating = housingUnit.AverageRating,
-            ReviewCount = housingUnit.ReviewCount
+            ReviewCount = housingUnit.ReviewCount,
+            IsDeleted = housingUnit.IsDeleted,
+            CreatedAt = housingUnit.CreatedAt,
+            UpdatedAt = housingUnit.UpdatedAt
         };
     }
 
@@ -255,9 +344,84 @@ public class HousingUnitService : IHousingUnitService
         var housingUnit = await _housingUnitRepository.GetAsync(housingUnitId);
         if (housingUnit == null) return false;
 
+        var isVerified = await _landLordService.IsLandlordVerifiedAsync(housingUnit.LandLordId);
+        if (!isVerified)
+        {
+            return false;
+        }
+
         await _housingUnitRepository.Delete(housingUnit);
         await _housingUnitRepository.CommitAsync();
 
         return true;
+    }
+
+    public async Task<HousingUnitDetailsResponse?> GetHousingUnitDetailsAsync(Guid housingUnitId)
+    {
+        var housingUnit = await _housingUnitRepository.GetAll()
+            .Include(h => h.Rooms)
+            .Include(h => h.UnitImages)
+            .Include(h => h.Reviews)
+            .FirstOrDefaultAsync(h => h.HousingUnitId == housingUnitId);
+
+        if (housingUnit == null) return null;
+
+        return new HousingUnitDetailsResponse
+        {
+            HousingUnitId = housingUnit.HousingUnitId,
+            LandLordId = housingUnit.LandLordId,
+            Title = housingUnit.Title,
+            Description = housingUnit.Description,
+            Address = housingUnit.Address,
+            City = housingUnit.City,
+            Area = housingUnit.Area,
+            Price = housingUnit.Price,
+            BaseMonthlyPrice = housingUnit.BaseMonthlyPrice,
+            UnitImageUrl = housingUnit.UnitImageUrl,
+            VideoUrl = housingUnit.VideoUrl,
+            GenderAllowed = housingUnit.GenderAllowed,
+            Rules = housingUnit.Rules,
+            IsDeleted = housingUnit.IsDeleted,
+            AverageRating = housingUnit.AverageRating,
+            ReviewCount = housingUnit.ReviewCount,
+            Location = housingUnit.Location,
+            Latitude = housingUnit.Latitude,
+            Longitude = housingUnit.Longitude,
+            NumberOfRooms = housingUnit.NumberOfRooms,
+            IsAvailable = housingUnit.IsAvailable,
+            CreatedAt = housingUnit.CreatedAt,
+            UpdatedAt = housingUnit.UpdatedAt,
+            Rooms = housingUnit.Rooms?.Select(r => new RoomResponse
+            {
+                RoomId = r.RoomId,
+                HousingUnitId = r.HousingUnitId,
+                RoomType = r.RoomType,
+                RoomImageUrl = r.RoomImageUrl,
+                NumberOfBeds = r.NumberOfBeds,
+                Price = r.Price,
+                PricePerMonth = r.PricePerMonth,
+                Capacity = r.Capacity,
+                CurrentOccupancy = r.CurrentOccupancy,
+                IsAvailable = r.IsAvailable
+            }).ToList() ?? new List<RoomResponse>(),
+            UnitImages = housingUnit.UnitImages?.OrderBy(ui => ui.DisplayOrder).Select(ui => new UnitImageResponse
+            {
+                UnitImageId = ui.UnitImageId,
+                HousingUnitId = ui.HousingUnitId,
+                ImageUrl = ui.ImageUrl,
+                Description = ui.Description,
+                DisplayOrder = ui.DisplayOrder,
+                UploadedAt = ui.UploadedAt
+            }).ToList() ?? new List<UnitImageResponse>(),
+            Reviews = housingUnit.Reviews?.Select(r => new ReviewResponse
+            {
+                ReviewId = r.ReviewId,
+                StudentId = r.StudentId,
+                HousingUnitId = r.HousingUnitId,
+                Rating = r.Rating,
+                Comment = r.Comment,
+                ReviewDate = r.ReviewDate
+            }).ToList() ?? new List<ReviewResponse>()
+        };
     }
 }

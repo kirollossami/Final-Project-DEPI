@@ -10,15 +10,26 @@ public class BookingConfiguration : IEntityTypeConfiguration<Booking>
     {
         builder.HasKey(b => b.BookingId);
 
+        builder.Property(b => b.BookingType)
+            .HasConversion<string>();
+
         builder.Property(b => b.TotalPrice)
             .HasPrecision(18, 2);
 
         builder.Property(b => b.BookingStatus)
             .HasConversion<string>();
 
+        builder.Property(b => b.ContractPdfUrl)
+            .HasMaxLength(500);
+
         builder.HasOne(b => b.Student)
             .WithMany(s => s.Bookings)
             .HasForeignKey(b => b.StudentId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne(b => b.Bed)
+            .WithMany(bd => bd.Bookings)
+            .HasForeignKey(b => b.BedId)
             .OnDelete(DeleteBehavior.Restrict);
 
         builder.HasOne(b => b.Room)
@@ -26,9 +37,19 @@ public class BookingConfiguration : IEntityTypeConfiguration<Booking>
             .HasForeignKey(b => b.RoomId)
             .OnDelete(DeleteBehavior.Restrict);
 
+        builder.HasOne(b => b.HousingUnit)
+            .WithMany(hu => hu.Bookings)
+            .HasForeignKey(b => b.HousingUnitId)
+            .OnDelete(DeleteBehavior.Restrict);
+
         builder.HasOne(b => b.Payment)
             .WithOne(p => p.Booking)
             .HasForeignKey<Payment>(p => p.BookingId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne(b => b.Contract)
+            .WithOne(c => c.Booking)
+            .HasForeignKey<Contract>(c => c.BookingId)
             .OnDelete(DeleteBehavior.Restrict);
     }
 }

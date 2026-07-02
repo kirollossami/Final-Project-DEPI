@@ -7,9 +7,8 @@ using System.Threading.Tasks;
 
 namespace Business.DTOs.Requests;
 
-/// <summary>
-/// Request model for creating a new housing unit
-/// </summary>
+
+// Request model for creating a new housing unit
 public class HousingUnitCreateRequest
 {
     public Guid LandLordId { get; set; }
@@ -19,17 +18,21 @@ public class HousingUnitCreateRequest
     public string City { get; set; }
     public string Area { get; set; }
     public decimal Price { get; set; }
+    public decimal BaseMonthlyPrice { get; set; }
     public string? UnitImageUrl { get; set; }
+    public string? VideoUrl { get; set; }
     public Gender GenderAllowed { get; set; }
     public string Rules { get; set; }
     public string Location { get; set; }
+    public double Latitude { get; set; }
+    public double Longitude { get; set; }
     public int NumberOfRooms { get; set; }
     public bool IsAvailable { get; set; }
 }
 
-/// <summary>
-/// Request model for updating an existing housing unit
-/// </summary>
+
+// Request model for updating an existing housing unit
+
 public class HousingUnitUpdateRequest
 {
     public Guid HousingUnitId { get; set; }
@@ -39,17 +42,20 @@ public class HousingUnitUpdateRequest
     public string? City { get; set; }
     public string? Area { get; set; }
     public decimal? Price { get; set; }
+    public decimal? BaseMonthlyPrice { get; set; }
     public string? UnitImageUrl { get; set; }
+    public string? VideoUrl { get; set; }
     public Gender? GenderAllowed { get; set; }
     public string? Rules { get; set; }
     public string? Location { get; set; }
+    public double? Latitude { get; set; }
+    public double? Longitude { get; set; }
     public int? NumberOfRooms { get; set; }
     public bool? IsAvailable { get; set; }
 }
 
-/// <summary>
-/// Request model for filtering/searching housing units
-/// </summary>
+
+// Request model for filtering/searching housing units
 public class HousingUnitFilterRequest
 {
     public Guid? LandLordId { get; set; }

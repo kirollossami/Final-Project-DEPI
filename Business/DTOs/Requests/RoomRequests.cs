@@ -7,9 +7,8 @@ using System.Threading.Tasks;
 
 namespace Business.DTOs.Requests;
 
-/// <summary>
-/// Request model for creating a new room
-/// </summary>
+
+// Request model for creating a new room
 public class RoomCreateRequest
 {
     public Guid HousingUnitId { get; set; }
@@ -17,12 +16,12 @@ public class RoomCreateRequest
     public string? RoomImageUrl { get; set; }
     public int NumberOfBeds { get; set; }
     public decimal Price { get; set; }
+    public int Capacity { get; set; }
     public bool IsAvailable { get; set; }
 }
 
-/// <summary>
-/// Request model for updating an existing room
-/// </summary>
+
+// Request model for updating an existing room
 public class RoomUpdateRequest
 {
     public Guid RoomId { get; set; }
@@ -30,12 +29,11 @@ public class RoomUpdateRequest
     public string? RoomImageUrl { get; set; }
     public int? NumberOfBeds { get; set; }
     public decimal? Price { get; set; }
+    public int? Capacity { get; set; }
     public bool? IsAvailable { get; set; }
 }
 
-/// <summary>
-/// Request model for filtering/searching rooms
-/// </summary>
+// Request model for filtering/searching rooms
 public class RoomFilterRequest
 {
     public Guid? HousingUnitId { get; set; }
