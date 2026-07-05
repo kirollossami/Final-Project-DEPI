@@ -400,7 +400,7 @@ public class BookingService : IBookingService
                 var booking = await _bookingRepository.GetAsync(result.BookingId);
                 if (booking != null)
                 {
-                    booking.ContractId = contractId.ToString();
+                    booking.ContractId = contractId;
                     booking.UpdatedAt = DateTime.UtcNow;
                     await _bookingRepository.Update(booking);
                     await _bookingRepository.CommitAsync();
