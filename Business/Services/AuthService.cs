@@ -897,8 +897,8 @@ public class AuthService : IAuthService
         {
             return new AuthResponse
             {
-                Success = true,
-                Message = ErrorMessageHelper.ForgotPasswordGeneric
+                Success = false,
+                Message = "User not found."
             };
         }
 
