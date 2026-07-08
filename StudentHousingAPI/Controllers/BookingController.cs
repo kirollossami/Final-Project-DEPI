@@ -40,12 +40,19 @@ public class BookingController : BaseController
     [HttpPost("Create")]
     public async Task<ActionResult<BookingResponse>> CreateBooking([FromBody] BookingCreateRequest request)
     {
-        var booking = await _bookingService.CreateBookingAsync(request);
-        if (booking == null)
+        try
         {
-            return BadRequest("Invalid booking request or booking conflict");
+            var booking = await _bookingService.CreateBookingAsync(request);
+            if (booking == null)
+            {
+                return BadRequest("Invalid booking request or booking conflict");
+            }
+            return CreatedAtAction(nameof(GetBookingById), new { bookingId = booking.BookingId }, booking);
         }
-        return CreatedAtAction(nameof(GetBookingById), new { bookingId = booking.BookingId }, booking);
+        catch (Exception ex)
+        {
+            return BadRequest(ex.Message);
+        }
     }
 
     [HttpPut("Update")]

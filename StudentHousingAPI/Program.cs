@@ -212,16 +212,45 @@ builder.Services.AddScoped<IContractRepository, ContractRepository>();
 // Paymob Configuration
 builder.Services.Configure<PaymobSettings>(
     builder.Configuration.GetSection(PaymobSettings.SectionName));
-builder.Services.AddHttpClient<IPaymobService, PaymobService>();
+
+// Validate Paymob settings early to surface configuration issues immediately
+var paymobConfig = builder.Configuration.GetSection(PaymobSettings.SectionName).Get<PaymobSettings>();
+if (paymobConfig == null)
+{
+    // Paymob config missing — warn and continue. Payment endpoints will return errors until configured.
+    Console.Error.WriteLine("Warning: Paymob configuration section is missing. Payment features will be disabled until configured.");
+}
+// Require either a valid secret key present in Paymob:ApiKey or Paymob:SecretKey or via environment
+// ApiKey can be base64 encoded (service will decode it) or plain text starting with egy_sk_
+var paymobHasSecret = paymobConfig != null && !string.IsNullOrWhiteSpace(paymobConfig.ApiKey);
+var paymobSecretFromConfig = builder.Configuration["Paymob:SecretKey"];
+var paymobHasEnv = !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("PAYMOB_SECRET"))
+                  || !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("PAYMOB_APIKEY"))
+                  || !string.IsNullOrWhiteSpace(builder.Configuration["PAYMOB_SECRET"]);
+
+if (!paymobHasSecret && string.IsNullOrWhiteSpace(paymobSecretFromConfig) && !paymobHasEnv)
+{
+    // Log warning instead of failing startup so app can run without payments in development
+    Console.Error.WriteLine("Warning: Paymob secret key is not configured. Set Paymob:ApiKey (base64 encoded or egy_sk_...), Paymob:SecretKey, or the PAYMOB_SECRET env var to enable payments.");
+}
+
+if (paymobConfig != null && (string.IsNullOrWhiteSpace(paymobConfig.CardIntegrationId) || !int.TryParse(paymobConfig.CardIntegrationId, out _)))
+{
+    Console.Error.WriteLine("Warning: Paymob:CardIntegrationId is not configured or invalid. Some payment flows may not work.");
+}
+
+// Configure Paymob HttpClient
+builder.Services.AddHttpClient<IPaymobService, PaymobService>()
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = true });
 
 // Payment and Contract Workflow Services
-builder.Services.AddScoped<IPaymobService, PaymobService>();
 builder.Services.AddScoped<IContractService, ContractService>();
 builder.Services.AddScoped<IEscrowService, EscrowService>();
 builder.Services.AddScoped<IReceiptService, ReceiptService>();
 builder.Services.AddScoped<IPaymentHistoryService, PaymentHistoryService>();
 builder.Services.AddScoped<IBookingPaymentService, BookingPaymentService>();
 builder.Services.AddScoped<IAdminApprovalService, AdminApprovalService>();
+builder.Services.AddScoped<IContractWorkflowService, ContractWorkflowService>();
 #region Validators
 builder.Services.AddValidatorsFromAssemblyContaining<LoginValidator>();
 builder.Services.AddValidatorsFromAssemblyContaining<StudentRegisterValidator>();
@@ -230,8 +259,10 @@ builder.Services.AddFluentValidationAutoValidation();
 #endregion
 
 
-// Add CORS
-var allowedOrigins = builder.Configuration.GetSection("AllowedOrigins").Get<string[]>() ?? new[] { "http://localhost:4200" };
+// Add CORS — origins are driven entirely by appsettings.json "AllowedOrigins"
+var allowedOrigins = builder.Configuration.GetSection("AllowedOrigins").Get<string[]>()
+    ?? new[] { "https://unistay-shbs.vercel.app", "http://localhost:4200" };
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowSpecific", policy =>
@@ -276,7 +307,13 @@ builder.Services.AddSwaggerGen(options =>
     
 });
 
-builder.Services.AddSignalR();
+builder.Services.AddSignalR(options =>
+{
+    options.EnableDetailedErrors = true;
+}).AddJsonProtocol(options =>
+{
+    options.PayloadSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
+});
 
 var app = builder.Build();
 

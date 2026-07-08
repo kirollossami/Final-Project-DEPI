@@ -1,4 +1,5 @@
 using Infrastructure.Context;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using System;
 using System.Collections.Generic;
@@ -69,6 +70,41 @@ public class UnitOfWork : IUnitOfWork
 
         _transaction = await _context.Database.BeginTransactionAsync();
         return _transaction;
+    }
+
+    /// <summary>
+    /// Executes the given operation inside a retriable transaction, compatible with
+    /// SqlServerRetryingExecutionStrategy (EnableRetryOnFailure).
+    /// Use this instead of BeginTransactionAsync() to avoid the
+    /// "does not support user-initiated transactions" error.
+    /// </summary>
+    public Task ExecuteInTransactionAsync(Func<Task> operation)
+        => ExecuteInTransactionAsync(async () => { await operation(); return true; });
+
+    public async Task<T> ExecuteInTransactionAsync<T>(Func<Task<T>> operation)
+    {
+        // CreateExecutionStrategy returns a SqlServerRetryingExecutionStrategy.
+        // We must wrap the entire transaction (begin + work + commit) inside
+        // the strategy's Execute call so retries replay the full transaction.
+        var strategy = _context.Database.CreateExecutionStrategy();
+
+        T result = default!;
+        await strategy.ExecuteAsync(async () =>
+        {
+            await using var tx = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                result = await operation();
+                await _context.SaveChangesAsync();
+                await tx.CommitAsync();
+            }
+            catch
+            {
+                await tx.RollbackAsync();
+                throw;
+            }
+        });
+        return result;
     }
 
     public async Task CommitTransactionAsync()
