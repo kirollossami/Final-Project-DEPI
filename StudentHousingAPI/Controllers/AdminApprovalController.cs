@@ -18,6 +18,43 @@ public class AdminApprovalController : BaseController
         _adminApprovalService = adminApprovalService;
     }
 
+    // Admin actions for booking approval/rejection (only for bookings with paid payments)
+    [HttpPost("approve-booking/{bookingId}")]
+    public async Task<IActionResult> ApproveBooking(Guid bookingId, [FromBody] AdminContractApprovalRequest? request)
+    {
+        var adminUserId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(adminUserId))
+        {
+            return Unauthorized(new { Message = "Admin user not identified" });
+        }
+
+        var success = await HttpContext.RequestServices.GetRequiredService<IBookingService>()
+            .ApproveBookingAsync(bookingId, adminUserId, request?.AdminNotes);
+
+        if (!success)
+            return BadRequest(new { Message = "Booking cannot be approved. Ensure it exists and payment is completed." });
+
+        return Ok(new { Success = true });
+    }
+
+    [HttpPost("reject-booking/{bookingId}")]
+    public async Task<IActionResult> RejectBooking(Guid bookingId, [FromBody] AdminContractApprovalRequest? request)
+    {
+        var adminUserId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(adminUserId))
+        {
+            return Unauthorized(new { Message = "Admin user not identified" });
+        }
+
+        var success = await HttpContext.RequestServices.GetRequiredService<IBookingService>()
+            .RejectBookingAsync(bookingId, adminUserId, request?.AdminNotes);
+
+        if (!success)
+            return BadRequest(new { Message = "Booking cannot be rejected. Ensure it exists and payment is completed." });
+
+        return Ok(new { Success = true });
+    }
+
     [HttpGet("pending-contracts")]
     public async Task<IActionResult> GetPendingContracts()
     {

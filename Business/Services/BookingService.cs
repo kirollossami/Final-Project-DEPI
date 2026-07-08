@@ -13,11 +13,13 @@ namespace Business.Services;
 public class BookingService : IBookingService
 {
     private readonly IBookingRepository _bookingRepository;
+    private readonly IPaymentRepository _paymentRepository;
     private readonly ICommissionRecordRepository _commissionRecordRepository;
     private readonly IStudentRepository _studentRepository;
     private readonly IPricingService _pricingService;
     private readonly IBookingConflictService _bookingConflictService;
     private readonly IChatService _chatService;
+    private readonly IContractWorkflowService _contractWorkflowService;
     private readonly CommissionSettings _commissionSettings;
 
     public BookingService(
@@ -27,6 +29,8 @@ public class BookingService : IBookingService
         IPricingService pricingService,
         IBookingConflictService bookingConflictService,
         IChatService chatService,
+        IPaymentRepository paymentRepository,
+        IContractWorkflowService contractWorkflowService,
         IOptions<CommissionSettings> commissionSettings)
     {
         _bookingRepository = bookingRepository;
@@ -35,7 +39,59 @@ public class BookingService : IBookingService
         _pricingService = pricingService;
         _bookingConflictService = bookingConflictService;
         _chatService = chatService;
+        _paymentRepository = paymentRepository;
+        _contractWorkflowService = contractWorkflowService;
         _commissionSettings = commissionSettings.Value;
+    }
+
+    public async Task<bool> ApproveBookingAsync(Guid bookingId, string adminUserId, string? adminNotes = null)
+    {
+        var booking = await _bookingRepository.GetAsync(bookingId);
+        if (booking == null) return false;
+
+        // Only allow approval if a payment exists and is completed
+        var payment = await _paymentRepository.GetByBookingIdAsync(bookingId);
+        var hasPaid = payment != null && payment.PaymentStatus == Domain.Enums.PaymentStatus.Completed;
+
+        if (!hasPaid) return false;
+
+        booking.BookingStatus = Domain.Enums.BookingStatus.Approved;
+        booking.UpdatedAt = DateTime.UtcNow;
+        await _bookingRepository.Update(booking);
+        await _bookingRepository.CommitAsync();
+
+        // Trigger contract workflow (generate contract, create escrow, receipts, notifications)
+        try
+        {
+            if (payment != null)
+            {
+                await _contractWorkflowService.StartWorkflowAsync(booking.BookingId, payment.PaymentId);
+            }
+        }
+        catch
+        {
+            // Log but do not fail approval
+        }
+
+        return true;
+    }
+
+    public async Task<bool> RejectBookingAsync(Guid bookingId, string adminUserId, string? adminNotes = null)
+    {
+        var booking = await _bookingRepository.GetAsync(bookingId);
+        if (booking == null) return false;
+
+        // Only allow rejection if a payment exists and is completed
+        var payment = await _paymentRepository.GetByBookingIdAsync(bookingId);
+        var hasPaid = payment != null && payment.PaymentStatus == Domain.Enums.PaymentStatus.Completed;
+        if (!hasPaid) return false;
+
+        booking.BookingStatus = Domain.Enums.BookingStatus.Rejected;
+        booking.UpdatedAt = DateTime.UtcNow;
+        await _bookingRepository.Update(booking);
+        await _bookingRepository.CommitAsync();
+
+        return true;
     }
 
     public async Task<BookingResponse?> GetBookingByIdAsync(Guid bookingId)
@@ -204,55 +260,51 @@ public class BookingService : IBookingService
         var targetCount = new[] { request.BedId, request.RoomId, request.HousingUnitId }.Count(id => id.HasValue);
         if (targetCount != 1)
         {
-            return null;
+            throw new ArgumentException($"Exactly one of BedId, RoomId, or HousingUnitId must be provided. Got {targetCount}.");
         }
 
-        // Determine the target ID based on booking type
-        Guid? targetId = request.BookingType switch
-        {
-            BookingType.Bed => request.BedId,
-            BookingType.Room => request.RoomId,
-            BookingType.Unit => request.HousingUnitId,
-            _ => null
-        };
+        // Infer the effective booking type from whichever ID was actually provided.
+        // The frontend may send a mismatched BookingType (e.g. Bed when only HousingUnitId is set),
+        // so we derive it from the ID instead of trusting request.BookingType.
+        BookingType effectiveType =
+            request.BedId.HasValue ? BookingType.Bed :
+            request.RoomId.HasValue ? BookingType.Room :
+            BookingType.Unit;
 
-        if (targetId == null)
-        {
-            return null;
-        }
+        Guid targetId = (request.BedId ?? request.RoomId ?? request.HousingUnitId)!.Value;
 
         // Calculate total price using the pricing service
         decimal totalPrice = 0;
         try
         {
             totalPrice = await _pricingService.CalculateBookingPriceAsync(
-                request.BookingType,
-                targetId.Value,
+                effectiveType,
+                targetId,
                 request.StartDate,
                 request.EndDate);
         }
-        catch
+        catch (Exception ex)
         {
-            return null;
+            throw new InvalidOperationException($"Failed to calculate booking price: {ex.Message}", ex);
         }
 
         // Check for booking conflicts
         var hasConflict = await _bookingConflictService.HasBookingConflictAsync(
-            request.BookingType,
-            targetId.Value,
+            effectiveType,
+            targetId,
             request.StartDate,
             request.EndDate);
 
         if (hasConflict)
         {
-            return null;
+            throw new InvalidOperationException("A booking conflict exists for the selected dates and target.");
         }
 
         var booking = new Domain.Entities.Booking
         {
             BookingId = Guid.NewGuid(),
             StudentId = request.StudentId,
-            BookingType = request.BookingType,
+            BookingType = effectiveType,
             BedId = request.BedId,
             RoomId = request.RoomId,
             HousingUnitId = request.HousingUnitId,

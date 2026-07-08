@@ -98,7 +98,7 @@ public class AdminApprovalService : IAdminApprovalService
 
             // Update booking status - now it's awaiting escrow release
             var previousStatus = booking.BookingStatus.ToString();
-            booking.BookingStatus = BookingStatus.AwaitingAdminApproval;
+            booking.BookingStatus = BookingStatus.UnderAdminReview;
             booking.UpdatedAt = DateTime.UtcNow;
             await _unitOfWork.Bookings.Update(booking);
 
@@ -119,7 +119,7 @@ public class AdminApprovalService : IAdminApprovalService
                     $"Contract {contract.ContractNumber} has been approved by admin. Escrow funds held in platform account.",
                     payment.Amount,
                     previousStatus,
-                    BookingStatus.AwaitingAdminApproval.ToString(),
+                    BookingStatus.UnderAdminReview.ToString(),
                     request.AdminUserId,
                     "Admin",
                     metadata: new Dictionary<string, object>

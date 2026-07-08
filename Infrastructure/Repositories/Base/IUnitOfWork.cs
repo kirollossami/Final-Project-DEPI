@@ -31,4 +31,6 @@ public interface IUnitOfWork : IDisposable
     Task<IDbContextTransaction> BeginTransactionAsync();
     Task CommitTransactionAsync();
     Task RollbackTransactionAsync();
+    Task ExecuteInTransactionAsync(Func<Task> operation);
+    Task<T> ExecuteInTransactionAsync<T>(Func<Task<T>> operation);
 }
