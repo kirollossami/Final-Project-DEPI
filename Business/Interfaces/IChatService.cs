@@ -11,4 +11,5 @@ public interface IChatService
     Task<MessageResponse> SaveMessageAsync(Guid conversationId, string senderId, string content);
     Task MarkAsReadAsync(Guid conversationId, string userId);
     Task<bool> IsParticipantAsync(Guid conversationId, string userId);
+    Task<List<ConversationResponse>> GetUserConversationsAsync(string userId);
 }
