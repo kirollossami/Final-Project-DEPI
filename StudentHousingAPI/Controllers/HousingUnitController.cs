@@ -27,6 +27,7 @@ public class HousingUnitController : BaseController
     }
 
     [HttpGet("GetById/{id}")]
+    [AllowAnonymous]
     public async Task<IActionResult> GetHousingUnit(Guid id)
     {
         var result = await _housingUnitService.GetHousingUnitByIdAsync(id);
@@ -36,6 +37,7 @@ public class HousingUnitController : BaseController
     }
 
     [HttpGet("GetDetailsById/{id}")]
+    [AllowAnonymous]
     public async Task<IActionResult> GetHousingUnitDetails(Guid id)
     {
         var result = await _housingUnitService.GetHousingUnitDetailsAsync(id);
@@ -45,6 +47,7 @@ public class HousingUnitController : BaseController
     }
 
     [HttpGet("GetAll")]
+    [AllowAnonymous]
     public async Task<IActionResult> GetHousingUnits([FromQuery] HousingUnitFilterRequest filter)
     {
         var result = await _housingUnitService.GetHousingUnitsAsync(filter);

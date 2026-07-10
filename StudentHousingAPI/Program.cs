@@ -242,11 +242,15 @@ builder.Services.AddScoped<IChatService, ChatService>();
 
 // Payment and Contract Services
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
-builder.Services.AddScoped<IPaymentReceiptRepository, PaymentReceiptRepository>();
-builder.Services.AddScoped<IPaymentTransactionRepository, PaymentTransactionRepository>();
-builder.Services.AddScoped<IEscrowTransactionRepository, EscrowTransactionRepository>();
-builder.Services.AddScoped<IContractRepository, ContractRepository>();
 builder.Services.AddScoped<IContractWorkflowService, ContractWorkflowService>();
+builder.Services.AddScoped<IContractService, ContractService>();
+builder.Services.AddScoped<IEscrowService, EscrowService>();
+builder.Services.AddScoped<IReceiptService, ReceiptService>();
+builder.Services.AddScoped<IPaymentHistoryService, PaymentHistoryService>();
+builder.Services.AddScoped<IBookingPaymentService, BookingPaymentService>();
+builder.Services.AddScoped<IAdminApprovalService, AdminApprovalService>();
+builder.Services.AddScoped<IBookingApprovalService, BookingApprovalService>();
+builder.Services.AddScoped<IBalanceService, BalanceService>();
 
 // Paymob Configuration
 builder.Services.Configure<PaymobSettings>(
@@ -287,16 +291,6 @@ builder.Services.AddHttpClient("Paymob")
     });
 
 builder.Services.AddScoped<IPaymobService, PaymobService>();
-
-// Payment and Contract Workflow Services
-builder.Services.AddScoped<IContractService, ContractService>();
-builder.Services.AddScoped<IEscrowService, EscrowService>();
-builder.Services.AddScoped<IReceiptService, ReceiptService>();
-builder.Services.AddScoped<IPaymentHistoryService, PaymentHistoryService>();
-builder.Services.AddScoped<IBookingPaymentService, BookingPaymentService>();
-builder.Services.AddScoped<IAdminApprovalService, AdminApprovalService>();
-builder.Services.AddScoped<IBookingApprovalService, BookingApprovalService>();
-builder.Services.AddScoped<IBalanceService, BalanceService>();
 
 // Background service: expire bookings whose signature deadline has passed
 builder.Services.AddHostedService<BookingExpirationService>();

@@ -47,9 +47,8 @@ public class HousingUnitCreateValidator : AbstractValidator<HousingUnitCreateReq
         RuleFor(x => x.NumberOfRooms)
             .GreaterThan(0).WithMessage("Number of rooms must be greater than 0.");
 
-        RuleFor(x => x.UnitImageUrl)
-            .MaximumLength(500).WithMessage("Unit image URL must not exceed 500 characters.")
-            .When(x => !string.IsNullOrEmpty(x.UnitImageUrl));
+        // UnitImageUrl: no length limit — the column is nvarchar(max) and
+        // accepts both regular URLs and base64-encoded image strings.
 
         RuleFor(x => x.VideoUrl)
             .MaximumLength(500).WithMessage("Video URL must not exceed 500 characters.")
@@ -104,9 +103,7 @@ public class HousingUnitUpdateValidator : AbstractValidator<HousingUnitUpdateReq
             .GreaterThan(0).WithMessage("Number of rooms must be greater than 0.")
             .When(x => x.NumberOfRooms.HasValue);
 
-        RuleFor(x => x.UnitImageUrl)
-            .MaximumLength(500).WithMessage("Unit image URL must not exceed 500 characters.")
-            .When(x => !string.IsNullOrEmpty(x.UnitImageUrl));
+        // UnitImageUrl: no length limit — nvarchar(max) column, accepts URLs and base64.
 
         RuleFor(x => x.VideoUrl)
             .MaximumLength(500).WithMessage("Video URL must not exceed 500 characters.")
