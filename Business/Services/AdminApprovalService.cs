@@ -293,7 +293,7 @@ public class AdminApprovalService : IAdminApprovalService
 
             // Approve booking
             var previousStatus = booking.BookingStatus.ToString();
-            booking.BookingStatus = BookingStatus.UnderAdminReview;
+            booking.BookingStatus = BookingStatus.WaitingForAdminApproval;
             booking.UpdatedAt = DateTime.UtcNow;
             await _unitOfWork.Bookings.Update(booking);
             await _unitOfWork.SaveChangesAsync();
@@ -302,6 +302,10 @@ public class AdminApprovalService : IAdminApprovalService
             var owner = await ResolveOwnerAsync(booking);
             var payment = await _unitOfWork.Payments.GetAsync(escrow.PaymentId);
             var student = await _unitOfWork.Students.GetAsync(booking.StudentId);
+
+            // Calculate payout amounts
+            var platformFee = escrow.PlatformFee > 0 ? escrow.PlatformFee : (escrow.Amount * 0.05m);
+            var landlordPayoutAmount = escrow.Amount - platformFee;
 
             // Record payment history event
             if (payment != null)
@@ -315,7 +319,7 @@ public class AdminApprovalService : IAdminApprovalService
                     $"Contract {contract.ContractNumber} has been approved by admin. Escrow funds held in platform account.",
                     payment.Amount,
                     previousStatus,
-                    BookingStatus.UnderAdminReview.ToString(),
+                    BookingStatus.WaitingForAdminApproval.ToString(),
                     request.AdminUserId,
                     "Admin",
                     metadata: new Dictionary<string, object>

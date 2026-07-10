@@ -15,7 +15,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using SharpGrip.FluentValidation.AutoValidation.Endpoints.Extensions;
-using StudentHousingAPI.Logging;
 using StudentHousingAPI.Validators;
 using System.Text;
 
@@ -44,13 +43,12 @@ try
 
     var builder = WebApplication.CreateBuilder(args);
 
-// ── Logging — Console + rolling file.
-//    On IIS, Console output only appears when stdoutLogEnabled=true in web.config.
-//    The file logger always writes to logs/app-YYYY-MM-DD.log relative to the
-//    app root, which is the only reliable sink on a shared IIS host.
-//    It is registered before any services so startup crashes are always captured.
-builder.Logging.AddProvider(new RollingFileLoggerProvider(
-    Path.Combine(AppContext.BaseDirectory, "logs")));
+// ── Logging — Console + file
+//    Standard ASP.NET Core logging configuration
+builder.Logging.ClearProviders();
+builder.Logging.AddConsole();
+builder.Logging.AddDebug();
+builder.Logging.SetMinimumLevel(LogLevel.Information);
 
 // Add services to the container.
 builder.Services.AddControllers();
@@ -248,6 +246,7 @@ builder.Services.AddScoped<IPaymentReceiptRepository, PaymentReceiptRepository>(
 builder.Services.AddScoped<IPaymentTransactionRepository, PaymentTransactionRepository>();
 builder.Services.AddScoped<IEscrowTransactionRepository, EscrowTransactionRepository>();
 builder.Services.AddScoped<IContractRepository, ContractRepository>();
+builder.Services.AddScoped<IContractWorkflowService, ContractWorkflowService>();
 
 // Paymob Configuration
 builder.Services.Configure<PaymobSettings>(

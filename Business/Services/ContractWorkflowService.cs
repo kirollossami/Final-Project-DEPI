@@ -90,85 +90,9 @@ public class ContractWorkflowService : IContractWorkflowService
                 StudentNationalId = student.NationalId ?? "N/A"
             };
 
-            var contractResponse = await _contractService.GenerateContractAsync(contractRequest);
-            if (contractResponse == null)
-                throw new InvalidOperationException("Contract generation failed");
-
-            // 3. Update booking with contract info and move to awaiting signatures
-            var previousStatus = booking.BookingStatus.ToString();
-            booking.BookingStatus = BookingStatus.WaitingStudentSignature;
-            booking.UpdatedAt = DateTime.UtcNow;
-            await _unitOfWork.Bookings.Update(booking);
-
-            // 4. Create escrow to hold the payment
-            var escrowResponse = await _escrowService.CreateEscrowAsync(paymentId, contractResponse.ContractId, PlatformFeePercentage);
-
-            // 5. Record payment history for escrow creation
-            await _paymentHistoryService.RecordPaymentEventAsync(
-                paymentId,
-                booking.BookingId,
-                escrowResponse.EscrowId,
-                student.UserId ?? string.Empty,
-                "EscrowCreated",
-                $"Escrow created to hold payment. Amount: {escrowResponse.HeldAmount} EGP. Platform Fee: {escrowResponse.PlatformFee} EGP",
-                escrowResponse.HeldAmount,
-                previousStatus,
-                BookingStatus.WaitingStudentSignature.ToString(),
-                "System",
-                "System",
-                metadata: new Dictionary<string, object>
-                {
-                    { "EscrowId", escrowResponse.EscrowId },
-                    { "HeldAmount", escrowResponse.HeldAmount },
-                    { "PlatformFeePercentage", PlatformFeePercentage }
-                });
-
-            // 6. Generate receipts for student (payment received) and escrow hold
-            var receiptRequest = new ReceiptGenerationRequest
-            {
-                PaymentId = paymentId,
-                EscrowId = escrowResponse.EscrowId,
-                Type = ReceiptType.PaymentReceived,
-                IssuedToUserId = student.UserId ?? string.Empty,
-                IssuedToRole = "Student",
-                IssuedToName = student.User?.UserName ?? "Unknown",
-                AdditionalData = new Dictionary<string, object>
-                {
-                    { "BookingId", booking.BookingId },
-                    { "ContractId", contractResponse.ContractId }
-                }
-            };
-            await _receiptService.GenerateReceiptAsync(receiptRequest);
-
-            var escrowReceiptRequest = new ReceiptGenerationRequest
-            {
-                PaymentId = paymentId,
-                EscrowId = escrowResponse.EscrowId,
-                Type = ReceiptType.EscrowHeld,
-                IssuedToUserId = student.UserId ?? string.Empty,
-                IssuedToRole = "Student",
-                IssuedToName = student.User?.UserName ?? "Unknown",
-                AdditionalData = new Dictionary<string, object>
-                {
-                    { "HeldAmount", escrowResponse.HeldAmount },
-                    { "PlatformFee", escrowResponse.PlatformFee }
-                }
-            };
-            await _receiptService.GenerateReceiptAsync(escrowReceiptRequest);
-
-            await _unitOfWork.SaveChangesAsync();
-            await _unitOfWork.CommitTransactionAsync();
-
-            // 7. Send notifications to student and owner
-            await _notificationService.SendRealTimeNotificationAsync(
-                student.UserId ?? string.Empty,
-                "Payment completed successfully. Please download and sign the contract.",
-                "ContractReady");
-
-            await _notificationService.SendRealTimeNotificationAsync(
-                owner.UserId ?? string.Empty,
-                $"New booking payment received. Contract ID: {contractResponse.ContractNumber}",
-                "NewBooking");
+            // Contract generation is done by admin via UploadContractAsync
+            // This service is not used for automatic contract generation
+            throw new InvalidOperationException("Contract generation is handled by admin via UploadContractAsync");
         }
         catch (Exception ex)
         {

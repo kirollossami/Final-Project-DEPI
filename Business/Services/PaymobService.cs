@@ -334,4 +334,126 @@ public class PaymobService : IPaymobService
             return null;
         }
     }
+
+    public async Task<PaymobAuthResponse> GetBearerTokenAsync()
+    {
+        try
+        {
+            var effectiveApiKey = ResolveApiKey();
+            if (string.IsNullOrWhiteSpace(effectiveApiKey))
+                return new PaymobAuthResponse { Success = false, Message = "API key not configured" };
+
+            var currentBase = ResolveSetting("BaseUrl") ?? _settings.BaseUrl;
+            var baseAuthority = new Uri(currentBase).GetLeftPart(UriPartial.Authority);
+            var authUrl = $"{baseAuthority}/api/auth/tokens";
+
+            var authBody = new { api_key = effectiveApiKey };
+            var content = new StringContent(JsonSerializer.Serialize(authBody), Encoding.UTF8, "application/json");
+
+            using var requestMessage = new HttpRequestMessage(HttpMethod.Post, authUrl);
+            requestMessage.Content = content;
+
+            var response = await _httpClient.SendAsync(requestMessage);
+            var responseContent = await response.Content.ReadAsStringAsync();
+
+            if (!response.IsSuccessStatusCode)
+                return new PaymobAuthResponse { Success = false, Message = $"Auth failed: {responseContent}" };
+
+            var result = JsonSerializer.Deserialize<JsonElement>(responseContent);
+            var token = result.TryGetProperty("token", out var t) ? t.GetString() : null;
+
+            return new PaymobAuthResponse { Success = true, Token = token };
+        }
+        catch (Exception ex)
+        {
+            return new PaymobAuthResponse { Success = false, Message = $"Auth error: {ex.Message}" };
+        }
+    }
+
+    public async Task<JsonElement?> GetTransactionDetailsAsync(string transactionId)
+    {
+        try
+        {
+            var authResponse = await GetBearerTokenAsync();
+            if (!authResponse.Success || string.IsNullOrEmpty(authResponse.Token))
+                return null;
+
+            var currentBase = ResolveSetting("BaseUrl") ?? _settings.BaseUrl;
+            var baseAuthority = new Uri(currentBase).GetLeftPart(UriPartial.Authority);
+            var url = $"{baseAuthority}/api/acceptance/transactions/{transactionId}";
+
+            using var requestMessage = new HttpRequestMessage(HttpMethod.Get, url);
+            requestMessage.Headers.Authorization = new AuthenticationHeaderValue("Bearer", authResponse.Token);
+
+            var response = await _httpClient.SendAsync(requestMessage);
+            var responseContent = await response.Content.ReadAsStringAsync();
+
+            if (!response.IsSuccessStatusCode)
+                return null;
+
+            return JsonSerializer.Deserialize<JsonElement>(responseContent);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public async Task<JsonElement?> GetTransactionDetailsJsonAsync(string transactionId)
+    {
+        try
+        {
+            var authResponse = await GetBearerTokenAsync();
+            if (!authResponse.Success || string.IsNullOrEmpty(authResponse.Token))
+                return null;
+
+            var currentBase = ResolveSetting("BaseUrl") ?? _settings.BaseUrl;
+            var baseAuthority = new Uri(currentBase).GetLeftPart(UriPartial.Authority);
+            var url = $"{baseAuthority}/api/acceptance/transactions/{transactionId}";
+
+            using var requestMessage = new HttpRequestMessage(HttpMethod.Get, url);
+            requestMessage.Headers.Authorization = new AuthenticationHeaderValue("Bearer", authResponse.Token);
+
+            var response = await _httpClient.SendAsync(requestMessage);
+            var responseContent = await response.Content.ReadAsStringAsync();
+
+            if (!response.IsSuccessStatusCode)
+                return null;
+
+            return JsonSerializer.Deserialize<JsonElement>(responseContent);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public async Task<JsonElement?> GetIntentionDetailsAsync(string intentionId)
+    {
+        try
+        {
+            var effectiveApiKey = ResolveApiKey();
+            if (string.IsNullOrWhiteSpace(effectiveApiKey))
+                return null;
+
+            var currentBase = ResolveSetting("BaseUrl") ?? _settings.BaseUrl;
+            var baseAuthority = new Uri(currentBase).GetLeftPart(UriPartial.Authority);
+            var url = $"{baseAuthority}/v1/intention/{intentionId}";
+
+            using var requestMessage = new HttpRequestMessage(HttpMethod.Get, url);
+            requestMessage.Headers.Authorization = new AuthenticationHeaderValue("Token", effectiveApiKey);
+
+            var response = await _httpClient.SendAsync(requestMessage);
+            var responseContent = await response.Content.ReadAsStringAsync();
+
+            if (!response.IsSuccessStatusCode)
+                return null;
+
+            return JsonSerializer.Deserialize<JsonElement>(responseContent);
+        }
+        catch
+        {
+            return null;
+        }
+    }
 }
