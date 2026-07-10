@@ -38,6 +38,12 @@ public class PaymentHistoryService : IPaymentHistoryService
         string? ipAddress = null,
         Dictionary<string, object>? metadata = null)
     {
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            _logger.LogWarning($"RecordPaymentEventAsync: UserId is null or empty. Skipping event recording. EventType={eventType}, PaymentId={paymentId}");
+            return false;
+        }
+
         try
         {
             var paymentHistory = new PaymentHistory

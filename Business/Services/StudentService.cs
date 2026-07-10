@@ -3,6 +3,7 @@ using Business.DTOs.Responses;
 using Business.Interfaces;
 using Domain.Entities;
 using Domain.Enums;
+using Infrastructure.Context;
 using Infrastructure.Repositories;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -14,15 +15,57 @@ public class StudentService : IStudentService
     private readonly IStudentRepository _studentRepository;
     private readonly IFileStorageService _fileStorageService;
     private readonly UserManager<User> _userManager;
+    private readonly IBookingRepository _bookingRepository;
+    private readonly IReviewRepository _reviewRepository;
+    private readonly IComplaintRepository _complaintRepository;
+    private readonly IWishlistRepository _wishlistRepository;
+    private readonly IPaymentRepository _paymentRepository;
+    private readonly ICommissionRecordRepository _commissionRecordRepository;
+    private readonly IContractRepository _contractRepository;
+    private readonly IEscrowTransactionRepository _escrowTransactionRepository;
+    private readonly IPaymentReceiptRepository _paymentReceiptRepository;
+    private readonly IRefreshTokenRepository _refreshTokenRepository;
+    private readonly IPaymentHistoryRepository _paymentHistoryRepository;
+    private readonly INotificationRepository _notificationRepository;
+    private readonly IPaymentTransactionRepository _paymentTransactionRepository;
+    private readonly StudentHousingDBContext _context;
 
     public StudentService(
         IStudentRepository studentRepository,
         IFileStorageService fileStorageService,
-        UserManager<User> userManager)
+        UserManager<User> userManager,
+        IBookingRepository bookingRepository,
+        IReviewRepository reviewRepository,
+        IComplaintRepository complaintRepository,
+        IWishlistRepository wishlistRepository,
+        IPaymentRepository paymentRepository,
+        ICommissionRecordRepository commissionRecordRepository,
+        IContractRepository contractRepository,
+        IEscrowTransactionRepository escrowTransactionRepository,
+        IPaymentReceiptRepository paymentReceiptRepository,
+        IRefreshTokenRepository refreshTokenRepository,
+        IPaymentHistoryRepository paymentHistoryRepository,
+        INotificationRepository notificationRepository,
+        IPaymentTransactionRepository paymentTransactionRepository,
+        StudentHousingDBContext context)
     {
         _studentRepository = studentRepository;
         _fileStorageService = fileStorageService;
         _userManager = userManager;
+        _bookingRepository = bookingRepository;
+        _reviewRepository = reviewRepository;
+        _complaintRepository = complaintRepository;
+        _wishlistRepository = wishlistRepository;
+        _paymentRepository = paymentRepository;
+        _commissionRecordRepository = commissionRecordRepository;
+        _contractRepository = contractRepository;
+        _escrowTransactionRepository = escrowTransactionRepository;
+        _paymentReceiptRepository = paymentReceiptRepository;
+        _refreshTokenRepository = refreshTokenRepository;
+        _paymentHistoryRepository = paymentHistoryRepository;
+        _notificationRepository = notificationRepository;
+        _paymentTransactionRepository = paymentTransactionRepository;
+        _context = context;
     }
 
     public async Task<StudentResponse?> GetStudentByIdAsync(Guid studentId)
@@ -164,12 +207,190 @@ public class StudentService : IStudentService
 
     public async Task<bool> DeleteStudentAsync(Guid studentId)
     {
-        var student = await _studentRepository.GetAsync(studentId);
+        var student = await _context.Students
+            .Include(s => s.Bookings)
+                .ThenInclude(b => b.Payment)
+                    .ThenInclude(p => p.PaymentReceipts)
+            .Include(s => s.Bookings)
+                .ThenInclude(b => b.CommissionRecord)
+            .Include(s => s.Bookings)
+                .ThenInclude(b => b.Contract)
+            .Include(s => s.Reviews)
+            .Include(s => s.Complaints)
+            .Include(s => s.Wishlists)
+            .FirstOrDefaultAsync(s => s.StudentId == studentId);
+        
         if (student == null) return false;
 
-        await _studentRepository.Delete(student);
-        await _studentRepository.CommitAsync();
+        // Delete related records using context directly for single transaction
+        if (student.Bookings != null && student.Bookings.Any())
+        {
+            foreach (var booking in student.Bookings)
+            {
+                // Delete payment receipts first
+                if (booking.Payment != null && booking.Payment.PaymentReceipts != null)
+                {
+                    foreach (var receipt in booking.Payment.PaymentReceipts)
+                    {
+                        _context.PaymentReceipts.Remove(receipt);
+                    }
+                }
 
+                // Delete payment transactions for this payment
+                if (booking.Payment != null)
+                {
+                    var paymentTransactions = await _context.PaymentTransactions
+                        .Where(pt => pt.PaymentId == booking.Payment.PaymentId)
+                        .ToListAsync();
+                    foreach (var pt in paymentTransactions)
+                    {
+                        _context.PaymentTransactions.Remove(pt);
+                    }
+                }
+
+                // Delete escrow transactions related to this booking
+                var escrowTransactions = await _context.EscrowTransactions
+                    .Where(e => e.BookingId == booking.BookingId)
+                    .ToListAsync();
+                foreach (var escrow in escrowTransactions)
+                {
+                    _context.EscrowTransactions.Remove(escrow);
+                }
+
+                // Delete booking-related entities
+                if (booking.Payment != null)
+                {
+                    _context.Payments.Remove(booking.Payment);
+                }
+                if (booking.CommissionRecord != null)
+                {
+                    _context.CommissionRecords.Remove(booking.CommissionRecord);
+                }
+                if (booking.Contract != null)
+                {
+                    _context.Contracts.Remove(booking.Contract);
+                }
+                // Then delete the booking
+                _context.Bookings.Remove(booking);
+            }
+        }
+
+        if (student.Reviews != null && student.Reviews.Any())
+        {
+            foreach (var review in student.Reviews)
+            {
+                _context.Reviews.Remove(review);
+            }
+        }
+
+        if (student.Complaints != null && student.Complaints.Any())
+        {
+            foreach (var complaint in student.Complaints)
+            {
+                _context.Complaints.Remove(complaint);
+            }
+        }
+
+        if (student.Wishlists != null && student.Wishlists.Any())
+        {
+            foreach (var wishlist in student.Wishlists)
+            {
+                _context.Wishlists.Remove(wishlist);
+            }
+        }
+
+        // Delete escrow transactions that have direct StudentId references
+        var directEscrowTransactions = await _context.EscrowTransactions
+            .Where(e => e.StudentId == studentId)
+            .ToListAsync();
+        foreach (var escrow in directEscrowTransactions)
+        {
+            _context.EscrowTransactions.Remove(escrow);
+        }
+
+        // Delete refresh tokens for this user
+        if (student.UserId != null)
+        {
+            var refreshTokens = await _context.RefreshTokens
+                .Where(rt => rt.UserId == student.UserId)
+                .ToListAsync();
+            foreach (var token in refreshTokens)
+            {
+                _context.RefreshTokens.Remove(token);
+            }
+
+            // Delete notifications for this user
+            var notifications = await _context.Notifications
+                .Where(n => n.UserId == student.UserId)
+                .ToListAsync();
+            foreach (var notification in notifications)
+            {
+                _context.Notifications.Remove(notification);
+            }
+
+            // Delete conversations where this student is the student user
+            var conversations = await _context.Conversations
+                .Where(c => c.StudentUserId == student.UserId)
+                .ToListAsync();
+            foreach (var conversation in conversations)
+            {
+                _context.Conversations.Remove(conversation);
+            }
+        }
+
+        // Delete the User account if it exists
+        if (student.UserId != null)
+        {
+            var user = await _context.Users.FindAsync(student.UserId);
+            if (user != null)
+            {
+                // Delete Identity-related records first
+                var userRoles = await _context.UserRoles
+                    .Where(ur => ur.UserId == student.UserId)
+                    .ToListAsync();
+                foreach (var userRole in userRoles)
+                {
+                    _context.UserRoles.Remove(userRole);
+                }
+
+                var userClaims = await _context.UserClaims
+                    .Where(uc => uc.UserId == student.UserId)
+                    .ToListAsync();
+                foreach (var userClaim in userClaims)
+                {
+                    _context.UserClaims.Remove(userClaim);
+                }
+
+                var userLogins = await _context.UserLogins
+                    .Where(ul => ul.UserId == student.UserId)
+                    .ToListAsync();
+                foreach (var userLogin in userLogins)
+                {
+                    _context.UserLogins.Remove(userLogin);
+                }
+
+                var userTokens = await _context.UserTokens
+                    .Where(ut => ut.UserId == student.UserId)
+                    .ToListAsync();
+                foreach (var userToken in userTokens)
+                {
+                    _context.UserTokens.Remove(userToken);
+                }
+
+                _context.Users.Remove(user);
+            }
+        }
+
+        _context.Students.Remove(student);
+
+        try
+        {
+            var changes = await _context.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            throw new Exception($"Error deleting student: {ex.Message}", ex);
+        }
         return true;
     }
 

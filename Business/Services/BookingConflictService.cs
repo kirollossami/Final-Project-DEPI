@@ -25,6 +25,18 @@ public class BookingConflictService : IBookingConflictService
         _housingUnitRepository = housingUnitRepository;
     }
 
+    // Valid booking statuses that indicate an active booking (not cancelled or rejected)
+    private static readonly BookingStatus[] ActiveBookingStatuses = 
+    {
+        BookingStatus.PendingPayment,
+        BookingStatus.WaitingForContract,
+        BookingStatus.WaitingForSignatures,
+        BookingStatus.WaitingForStudentSignature,
+        BookingStatus.WaitingForLandlordSignature,
+        BookingStatus.WaitingForAdminApproval,
+        BookingStatus.Approved
+    };
+
     public async Task<bool> HasBookingConflictAsync(BookingType bookingType, Guid targetId, DateTime startDate, DateTime endDate)
     {
         var conflicts = await GetConflictsAsync(bookingType, targetId, startDate, endDate);
@@ -67,7 +79,7 @@ public class BookingConflictService : IBookingConflictService
             .Where(b => b.BedId == bedId &&
                         b.BookingStatus != BookingStatus.Cancelled &&
                         b.BookingStatus != BookingStatus.Rejected &&
-                        b.BookingStatus != BookingStatus.Completed &&
+                        !ActiveBookingStatuses.Contains(b.BookingStatus) &&
                         ((b.StartDate <= startDate && b.EndDate >= startDate) ||
                          (b.StartDate <= endDate && b.EndDate >= endDate) ||
                          (b.StartDate >= startDate && b.EndDate <= endDate)))
@@ -100,7 +112,7 @@ public class BookingConflictService : IBookingConflictService
                             b.BookingType == BookingType.Room &&
                             b.BookingStatus != BookingStatus.Cancelled &&
                             b.BookingStatus != BookingStatus.Rejected &&
-                            b.BookingStatus != BookingStatus.Completed &&
+                            !ActiveBookingStatuses.Contains(b.BookingStatus) &&
                             ((b.StartDate <= startDate && b.EndDate >= startDate) ||
                              (b.StartDate <= endDate && b.EndDate >= endDate) ||
                              (b.StartDate >= startDate && b.EndDate <= endDate)))
@@ -130,7 +142,7 @@ public class BookingConflictService : IBookingConflictService
                             b.BookingType == BookingType.Unit &&
                             b.BookingStatus != BookingStatus.Cancelled &&
                             b.BookingStatus != BookingStatus.Rejected &&
-                            b.BookingStatus != BookingStatus.Completed &&
+                            !ActiveBookingStatuses.Contains(b.BookingStatus) &&
                             ((b.StartDate <= startDate && b.EndDate >= startDate) ||
                              (b.StartDate <= endDate && b.EndDate >= endDate) ||
                              (b.StartDate >= startDate && b.EndDate <= endDate)))
@@ -172,7 +184,7 @@ public class BookingConflictService : IBookingConflictService
                             b.BookingType == BookingType.Bed &&
                             b.BookingStatus != BookingStatus.Cancelled &&
                             b.BookingStatus != BookingStatus.Rejected &&
-                            b.BookingStatus != BookingStatus.Completed &&
+                            !ActiveBookingStatuses.Contains(b.BookingStatus) &&
                             ((b.StartDate <= startDate && b.EndDate >= startDate) ||
                              (b.StartDate <= endDate && b.EndDate >= endDate) ||
                              (b.StartDate >= startDate && b.EndDate <= endDate)))
@@ -200,7 +212,7 @@ public class BookingConflictService : IBookingConflictService
                         b.BookingType == BookingType.Room &&
                         b.BookingStatus != BookingStatus.Cancelled &&
                         b.BookingStatus != BookingStatus.Rejected &&
-                        b.BookingStatus != BookingStatus.Completed &&
+                        !ActiveBookingStatuses.Contains(b.BookingStatus) &&
                         ((b.StartDate <= startDate && b.EndDate >= startDate) ||
                          (b.StartDate <= endDate && b.EndDate >= endDate) ||
                          (b.StartDate >= startDate && b.EndDate <= endDate)))
@@ -230,7 +242,7 @@ public class BookingConflictService : IBookingConflictService
                             b.BookingType == BookingType.Unit &&
                             b.BookingStatus != BookingStatus.Cancelled &&
                             b.BookingStatus != BookingStatus.Rejected &&
-                            b.BookingStatus != BookingStatus.Completed &&
+                            !ActiveBookingStatuses.Contains(b.BookingStatus) &&
                             ((b.StartDate <= startDate && b.EndDate >= startDate) ||
                              (b.StartDate <= endDate && b.EndDate >= endDate) ||
                              (b.StartDate >= startDate && b.EndDate <= endDate)))
@@ -279,7 +291,7 @@ public class BookingConflictService : IBookingConflictService
                             b.BookingType == BookingType.Bed &&
                             b.BookingStatus != BookingStatus.Cancelled &&
                             b.BookingStatus != BookingStatus.Rejected &&
-                            b.BookingStatus != BookingStatus.Completed &&
+                            !ActiveBookingStatuses.Contains(b.BookingStatus) &&
                             ((b.StartDate <= startDate && b.EndDate >= startDate) ||
                              (b.StartDate <= endDate && b.EndDate >= endDate) ||
                              (b.StartDate >= startDate && b.EndDate <= endDate)))
@@ -309,7 +321,7 @@ public class BookingConflictService : IBookingConflictService
                             b.BookingType == BookingType.Room &&
                             b.BookingStatus != BookingStatus.Cancelled &&
                             b.BookingStatus != BookingStatus.Rejected &&
-                            b.BookingStatus != BookingStatus.Completed &&
+                            !ActiveBookingStatuses.Contains(b.BookingStatus) &&
                             ((b.StartDate <= startDate && b.EndDate >= startDate) ||
                              (b.StartDate <= endDate && b.EndDate >= endDate) ||
                              (b.StartDate >= startDate && b.EndDate <= endDate)))
@@ -337,7 +349,7 @@ public class BookingConflictService : IBookingConflictService
                         b.BookingType == BookingType.Unit &&
                         b.BookingStatus != BookingStatus.Cancelled &&
                         b.BookingStatus != BookingStatus.Rejected &&
-                        b.BookingStatus != BookingStatus.Completed &&
+                        !ActiveBookingStatuses.Contains(b.BookingStatus) &&
                         ((b.StartDate <= startDate && b.EndDate >= startDate) ||
                          (b.StartDate <= endDate && b.EndDate >= endDate) ||
                          (b.StartDate >= startDate && b.EndDate <= endDate)))
