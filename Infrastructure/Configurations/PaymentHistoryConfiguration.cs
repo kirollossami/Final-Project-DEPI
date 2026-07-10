@@ -18,7 +18,7 @@ public class PaymentHistoryConfiguration : IEntityTypeConfiguration<PaymentHisto
 
         builder.Property(ph => ph.UserId)
             .IsRequired()
-            .HasMaxLength(256);
+            .HasMaxLength(450);
 
         builder.Property(ph => ph.EventType)
             .IsRequired()

@@ -36,7 +36,7 @@ public class HousingUnitConfiguration : IEntityTypeConfiguration<HousingUnit>
             .IsRequired();
 
         builder.Property(h => h.UnitImageUrl)
-            .HasMaxLength(500);
+            .HasColumnType("nvarchar(max)");  // must be MAX — can hold a URL or a base64 image string
 
         builder.Property(h => h.VideoUrl)
             .HasMaxLength(500);

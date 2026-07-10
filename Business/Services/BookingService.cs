@@ -16,6 +16,7 @@ public class BookingService : IBookingService
     private readonly IPaymentRepository _paymentRepository;
     private readonly ICommissionRecordRepository _commissionRecordRepository;
     private readonly IStudentRepository _studentRepository;
+    private readonly ILandLordRepository _landLordRepository;
     private readonly IPricingService _pricingService;
     private readonly IBookingConflictService _bookingConflictService;
     private readonly IChatService _chatService;
@@ -26,6 +27,7 @@ public class BookingService : IBookingService
         IBookingRepository bookingRepository,
         ICommissionRecordRepository commissionRecordRepository,
         IStudentRepository studentRepository,
+        ILandLordRepository landLordRepository,
         IPricingService pricingService,
         IBookingConflictService bookingConflictService,
         IChatService chatService,
@@ -36,6 +38,7 @@ public class BookingService : IBookingService
         _bookingRepository = bookingRepository;
         _commissionRecordRepository = commissionRecordRepository;
         _studentRepository = studentRepository;
+        _landLordRepository = landLordRepository;
         _pricingService = pricingService;
         _bookingConflictService = bookingConflictService;
         _chatService = chatService;
@@ -201,20 +204,44 @@ public class BookingService : IBookingService
         var student = await _studentRepository.GetAll()
             .FirstOrDefaultAsync(s => s.UserId == userId);
 
-        if (student == null)
-        {
-            return new BookingIndexedResponse
-            {
-                Records = new List<BookingResponse>(),
-                TotalRecords = 0,
-                PageIndex = pageNumber - 1,
-                PageSize = pageSize
-            };
-        }
+        IQueryable<Domain.Entities.Booking> query;
 
-        var query = _bookingRepository.GetAll()
-            .Include(b => b.CommissionRecord)
-            .Where(b => b.StudentId == student.StudentId);
+        if (student != null)
+        {
+            query = _bookingRepository.GetAll()
+                .Include(b => b.CommissionRecord)
+                .Where(b => b.StudentId == student.StudentId);
+        }
+        else
+        {
+            var landlord = await _landLordRepository.GetAll()
+                .FirstOrDefaultAsync(l => l.UserId == userId);
+
+            if (landlord == null)
+            {
+                return new BookingIndexedResponse
+                {
+                    Records = new List<BookingResponse>(),
+                    TotalRecords = 0,
+                    PageIndex = pageNumber - 1,
+                    PageSize = pageSize
+                };
+            }
+
+            query = _bookingRepository.GetAll()
+                .Include(b => b.CommissionRecord)
+                .Include(b => b.Room)
+                .ThenInclude(r => r.HousingUnit)
+                .Include(b => b.Bed)
+                .ThenInclude(bed => bed.Room)
+                .ThenInclude(r => r.HousingUnit)
+                .Include(b => b.HousingUnit)
+                .Where(b => 
+                    (b.HousingUnit != null && b.HousingUnit.LandLordId == landlord.LandLordId) ||
+                    (b.Room != null && b.Room.HousingUnit != null && b.Room.HousingUnit.LandLordId == landlord.LandLordId) ||
+                    (b.Bed != null && b.Bed.Room != null && b.Bed.Room.HousingUnit != null && b.Bed.Room.HousingUnit.LandLordId == landlord.LandLordId)
+                );
+        }
 
         if (statusFilter.HasValue)
         {
@@ -311,7 +338,7 @@ public class BookingService : IBookingService
             StartDate = request.StartDate,
             EndDate = request.EndDate,
             TotalPrice = totalPrice,
-            BookingStatus = BookingStatus.Pending,
+            BookingStatus = BookingStatus.PendingPayment,
             IsDeleted = false,
             CreatedAt = DateTime.UtcNow
         };
@@ -420,8 +447,23 @@ public class BookingService : IBookingService
         var booking = await _bookingRepository.GetAsync(bookingId);
         if (booking == null) return false;
 
+        // Cancellation is only allowed before admin approval
+        var cancellableStatuses = new[]
+        {
+            BookingStatus.PendingPayment,
+            BookingStatus.WaitingForContract,
+            BookingStatus.WaitingForSignatures,
+            BookingStatus.WaitingForStudentSignature,
+            BookingStatus.WaitingForLandlordSignature,
+            BookingStatus.WaitingForAdminApproval
+        };
+
+        if (!cancellableStatuses.Contains(booking.BookingStatus))
+            return false;
+
         booking.BookingStatus = BookingStatus.Cancelled;
         booking.IsDeleted = true;
+        booking.UpdatedAt = DateTime.UtcNow;
 
         await _bookingRepository.Update(booking);
         await _bookingRepository.CommitAsync();
@@ -481,12 +523,12 @@ public class BookingService : IBookingService
             throw new InvalidOperationException("Booking not found.");
         }
 
-        if (booking.BookingStatus != BookingStatus.PaymentPending)
+        if (booking.BookingStatus != BookingStatus.PendingPayment)
         {
-            throw new InvalidOperationException("Booking is not in PaymentPending state.");
+            throw new InvalidOperationException("Booking is not in PendingPayment state.");
         }
 
-        booking.BookingStatus = BookingStatus.Approved;
+        booking.BookingStatus = BookingStatus.WaitingForContract;
         booking.UpdatedAt = DateTime.UtcNow;
         await _bookingRepository.Update(booking);
         await _bookingRepository.CommitAsync();

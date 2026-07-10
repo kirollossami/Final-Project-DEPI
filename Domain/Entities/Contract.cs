@@ -13,38 +13,40 @@ namespace Domain.Entities
         public Guid BookingId { get; set; }
         public string ContractNumber { get; set; } = string.Empty;
         
-        // Contract Details
+        // Contract Details (for reference, populated from booking)
         public DateTime ReceivingDate { get; set; }
         public DateTime HandoverDate { get; set; }
         public decimal FinalPrice { get; set; }
         public ContractDurationType DurationType { get; set; }
         public int DurationValue { get; set; } // Number of months or years
         
-        // Owner Information
+        // Owner Information (for reference)
         public string OwnerFullName { get; set; } = string.Empty;
         public string OwnerNationalId { get; set; } = string.Empty;
         
-        // Student Information
+        // Student Information (for reference)
         public string StudentFullName { get; set; } = string.Empty;
         public string StudentNationalId { get; set; } = string.Empty;
         
-        // PDF Storage
-        public string GeneratedPdfUrl { get; set; } = string.Empty;
-        public string? StudentSignedPdfUrl { get; set; }
-        public string? OwnerSignedPdfUrl { get; set; }
-        public string? FinalSignedPdfUrl { get; set; }
+        // PDF Storage - Manual Upload Workflow
+        public string? OriginalContractPdfPath { get; set; } // Uploaded by admin
+        public string? StudentSignedContractPath { get; set; } // Uploaded by student
+        public string? LandlordSignedContractPath { get; set; } // Uploaded by landlord
         
         // Signature Status
         public bool IsStudentSigned { get; set; } = false;
-        public bool IsOwnerSigned { get; set; } = false;
+        public bool IsLandlordSigned { get; set; } = false;
         public DateTime? StudentSignedAt { get; set; }
-        public DateTime? OwnerSignedAt { get; set; }
+        public DateTime? LandlordSignedAt { get; set; }
         
         // Admin Approval
         public bool IsAdminApproved { get; set; } = false;
         public string? AdminUserId { get; set; }
         public DateTime? AdminApprovedAt { get; set; }
         public string? AdminNotes { get; set; }
+        
+        // Contract Status
+        public ContractStatus ContractStatus { get; set; } = ContractStatus.WaitingForUpload;
         
         // Timestamps
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

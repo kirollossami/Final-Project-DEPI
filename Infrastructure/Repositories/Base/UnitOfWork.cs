@@ -37,6 +37,7 @@ public class UnitOfWork : IUnitOfWork
     private IWishlistRepository? _wishlists;
     private IComplaintRepository? _complaints;
     private ICommissionRecordRepository? _commissionRecords;
+    private IBalanceRepository? _balances;
 
     public IBookingRepository Bookings => _bookings ??= new BookingRepository(_context);
     public IPaymentRepository Payments => _payments ??= new PaymentRepository(_context);
@@ -55,11 +56,27 @@ public class UnitOfWork : IUnitOfWork
     public IWishlistRepository Wishlists => _wishlists ??= new WishlistRepository(_context);
     public IComplaintRepository Complaints => _complaints ??= new ComplaintRepository(_context);
     public ICommissionRecordRepository CommissionRecords => _commissionRecords ??= new CommissionRecordRepository(_context);
+    public IBalanceRepository Balances => _balances ??= new BalanceRepository(_context);
 
     public async Task<int> SaveChangesAsync()
     {
         return await _context.SaveChangesAsync();
     }
+
+    /// <inheritdoc/>
+    public IEnumerable<string> GetTrackedEntities()
+    {
+        return _context.ChangeTracker.Entries()
+            .Select(e =>
+            {
+                var pks = string.Join(", ", e.Properties
+                    .Where(p => p.Metadata.IsPrimaryKey())
+                    .Select(p => $"{p.Metadata.Name}={p.CurrentValue}"));
+                return $"{e.Entity.GetType().Name} | {e.State} | {pks}";
+            })
+            .ToList();
+    }
+
 
     public async Task<IDbContextTransaction> BeginTransactionAsync()
     {

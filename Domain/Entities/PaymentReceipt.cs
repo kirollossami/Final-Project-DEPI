@@ -11,7 +11,7 @@ namespace Domain.Entities
     {
         public Guid ReceiptId { get; set; }
         public Guid PaymentId { get; set; }
-        public Guid EscrowId { get; set; }
+        public Guid? EscrowId { get; set; }  // Nullable — not linked to escrow for PaymentReceived receipts
         public string ReceiptNumber { get; set; } = string.Empty;
         
         // Receipt Details
@@ -42,6 +42,6 @@ namespace Domain.Entities
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
         public virtual Payment Payment { get; set; } = null!;
-        public virtual EscrowTransaction EscrowTransaction { get; set; } = null!;
+        public virtual EscrowTransaction? EscrowTransaction { get; set; }
     }
 }

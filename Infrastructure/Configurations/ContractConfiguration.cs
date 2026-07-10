@@ -37,17 +37,18 @@ public class ContractConfiguration : IEntityTypeConfiguration<Contract>
             .HasMaxLength(100)
             .IsRequired();
 
-        builder.Property(c => c.GeneratedPdfUrl)
+        // Manual upload workflow properties
+        builder.Property(c => c.OriginalContractPdfPath)
             .HasMaxLength(2000);
 
-        builder.Property(c => c.StudentSignedPdfUrl)
+        builder.Property(c => c.StudentSignedContractPath)
             .HasMaxLength(2000);
 
-        builder.Property(c => c.OwnerSignedPdfUrl)
+        builder.Property(c => c.LandlordSignedContractPath)
             .HasMaxLength(2000);
 
-        builder.Property(c => c.FinalSignedPdfUrl)
-            .HasMaxLength(2000);
+        builder.Property(c => c.ContractStatus)
+            .HasConversion<string>();
 
         builder.Property(c => c.AdminUserId)
             .HasMaxLength(500);

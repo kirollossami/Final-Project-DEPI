@@ -108,7 +108,7 @@ public class AdminService : IAdminService
                     var activeBookingIds = await _bookingRepository.GetAll()
                         .Where(b => b.StudentId == student.StudentId &&
                                     (b.BookingStatus == BookingStatus.Approved ||
-                                     b.BookingStatus == BookingStatus.Active))
+                                     b.BookingStatus == BookingStatus.Approved))
                         .Select(b => b.BookingId)
                         .ToListAsync();
 
@@ -132,7 +132,7 @@ public class AdminService : IAdminService
                         .Where(b => b.Room != null && b.Room.HousingUnit != null &&
                                     b.Room.HousingUnit.LandLordId == landlord.LandLordId &&
                                     (b.BookingStatus == BookingStatus.Approved ||
-                                     b.BookingStatus == BookingStatus.Active))
+                                     b.BookingStatus == BookingStatus.Approved))
                         .Select(b => b.BookingId)
                         .ToListAsync();
 
