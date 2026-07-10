@@ -56,6 +56,8 @@ public class AdminController : BaseController
     [HttpPost("users/{userId}/toggle-active")]
     public async Task<IActionResult> ToggleUserActiveStatus(string userId)
     {
+        if (string.IsNullOrWhiteSpace(userId) || userId == "undefined" || userId == "null")
+            return BadRequest(new { Success = false, Message = "Invalid user ID." });
         var result = await _adminService.ToggleUserActiveStatusAsync(userId);
         if (!result.Success)
             return BadRequest(result);
