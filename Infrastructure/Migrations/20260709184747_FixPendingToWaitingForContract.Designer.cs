@@ -4,6 +4,7 @@ using Infrastructure.Context;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Infrastructure.Migrations
 {
     [DbContext(typeof(StudentHousingDBContext))]
-    partial class StudentHousingDBContextModelSnapshot : ModelSnapshot
+    [Migration("20260709184747_FixPendingToWaitingForContract")]
+    partial class FixPendingToWaitingForContract
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -391,9 +394,7 @@ namespace Infrastructure.Migrations
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<DateTime>("CreatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime2")
-                        .HasDefaultValueSql("GETUTCDATE()");
+                        .HasColumnType("datetime2");
 
                     b.Property<string>("Currency")
                         .IsRequired()
@@ -724,9 +725,7 @@ namespace Infrastructure.Migrations
                         .HasColumnType("datetime2");
 
                     b.Property<DateTime>("PaymentDate")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime2")
-                        .HasDefaultValueSql("GETUTCDATE()");
+                        .HasColumnType("datetime2");
 
                     b.Property<string>("PaymentMethod")
                         .IsRequired()
@@ -856,9 +855,7 @@ namespace Infrastructure.Migrations
                         .HasColumnType("decimal(18,2)");
 
                     b.Property<DateTime>("CreatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime2")
-                        .HasDefaultValueSql("GETUTCDATE()");
+                        .HasColumnType("datetime2");
 
                     b.Property<string>("Currency")
                         .IsRequired()
@@ -868,7 +865,7 @@ namespace Infrastructure.Migrations
                     b.Property<DateTime?>("EmailSentAt")
                         .HasColumnType("datetime2");
 
-                    b.Property<Guid?>("EscrowId")
+                    b.Property<Guid>("EscrowId")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<bool>("IsEmailSent")
@@ -955,17 +952,11 @@ namespace Infrastructure.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
 
-                    b.Property<string>("ClientSecret")
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
-
                     b.Property<DateTime?>("CompletedAt")
                         .HasColumnType("datetime2");
 
                     b.Property<DateTime>("CreatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime2")
-                        .HasDefaultValueSql("GETUTCDATE()");
+                        .HasColumnType("datetime2");
 
                     b.Property<string>("Currency")
                         .IsRequired()
@@ -989,10 +980,6 @@ namespace Infrastructure.Migrations
 
                     b.Property<string>("PaymobIntentionId")
                         .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
-
-                    b.Property<string>("PaymobNumericOrderId")
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
 
@@ -1324,7 +1311,7 @@ namespace Infrastructure.Migrations
                         {
                             Id = "admin-user-id-001",
                             AccessFailedCount = 0,
-                            ConcurrencyStamp = "42cee69b-2a69-4aa2-9c6a-d59340898d79",
+                            ConcurrencyStamp = "e761d59b-ce87-4326-bccb-385ad5563c45",
                             Email = "admin@studenthousing.com",
                             EmailConfirmed = true,
                             IsActive = true,
@@ -1333,9 +1320,9 @@ namespace Infrastructure.Migrations
                             LockoutEnabled = false,
                             NormalizedEmail = "ADMIN@STUDENTHOUSING.COM",
                             NormalizedUserName = "ADMIN@STUDENTHOUSING.COM",
-                            PasswordHash = "AQAAAAIAAYagAAAAEPv+FSwbUyBXVYjP6r8+znugb3GFBL5Xs9deb5RWTeP8b8HzlaXuhVdzfRDRrJd9Hw==",
+                            PasswordHash = "AQAAAAIAAYagAAAAEDYXmBGLnSHi8g5QOn3gFh7Vde4jXW71BeZwNjGKYeg/Eg/6Uj2TMfgHZc9k9dK7ow==",
                             PhoneNumberConfirmed = false,
-                            SecurityStamp = "8ef8870b-745a-48bd-8f9f-ee911ad20881",
+                            SecurityStamp = "c03e1cd3-56f7-4b9d-9630-1f15d0d9d78d",
                             TwoFactorEnabled = false,
                             UserName = "admin@studenthousing.com"
                         });
@@ -1743,7 +1730,8 @@ namespace Infrastructure.Migrations
                     b.HasOne("Domain.Entities.EscrowTransaction", "EscrowTransaction")
                         .WithMany("PaymentReceipts")
                         .HasForeignKey("EscrowId")
-                        .OnDelete(DeleteBehavior.Restrict);
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
 
                     b.HasOne("Domain.Entities.Payment", "Payment")
                         .WithMany("PaymentReceipts")

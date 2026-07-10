@@ -4,6 +4,7 @@ using Infrastructure.Context;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Infrastructure.Migrations
 {
     [DbContext(typeof(StudentHousingDBContext))]
-    partial class StudentHousingDBContextModelSnapshot : ModelSnapshot
+    [Migration("20260708205705_AddContractSignatureDeadlineAndBookingStatusExpired")]
+    partial class AddContractSignatureDeadlineAndBookingStatusExpired
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -21,44 +24,6 @@ namespace Infrastructure.Migrations
                 .HasAnnotation("Relational:MaxIdentifierLength", 128);
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
-
-            modelBuilder.Entity("Domain.Entities.Balance", b =>
-                {
-                    b.Property<Guid>("BalanceId")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<decimal>("AvailableBalance")
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("Currency")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<decimal>("TotalPaidOut")
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<decimal>("TotalReceived")
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("UserId")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("UserRole")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.HasKey("BalanceId");
-
-                    b.ToTable("Balances");
-                });
 
             modelBuilder.Entity("Domain.Entities.Bed", b =>
                 {
@@ -253,10 +218,6 @@ namespace Infrastructure.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
-                    b.Property<string>("ContractStatus")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
@@ -271,28 +232,26 @@ namespace Infrastructure.Migrations
                         .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
 
+                    b.Property<string>("FinalSignedPdfUrl")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<string>("GeneratedPdfUrl")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
                     b.Property<DateTime>("HandoverDate")
                         .HasColumnType("datetime2");
 
                     b.Property<bool>("IsAdminApproved")
                         .HasColumnType("bit");
 
-                    b.Property<bool>("IsLandlordSigned")
+                    b.Property<bool>("IsOwnerSigned")
                         .HasColumnType("bit");
 
                     b.Property<bool>("IsStudentSigned")
                         .HasColumnType("bit");
-
-                    b.Property<DateTime?>("LandlordSignedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("LandlordSignedContractPath")
-                        .HasMaxLength(2000)
-                        .HasColumnType("nvarchar(2000)");
-
-                    b.Property<string>("OriginalContractPdfPath")
-                        .HasMaxLength(2000)
-                        .HasColumnType("nvarchar(2000)");
 
                     b.Property<string>("OwnerFullName")
                         .IsRequired()
@@ -304,7 +263,17 @@ namespace Infrastructure.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
+                    b.Property<DateTime?>("OwnerSignedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("OwnerSignedPdfUrl")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
                     b.Property<DateTime>("ReceivingDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("SignatureDeadline")
                         .HasColumnType("datetime2");
 
                     b.Property<string>("StudentFullName")
@@ -320,7 +289,7 @@ namespace Infrastructure.Migrations
                     b.Property<DateTime?>("StudentSignedAt")
                         .HasColumnType("datetime2");
 
-                    b.Property<string>("StudentSignedContractPath")
+                    b.Property<string>("StudentSignedPdfUrl")
                         .HasMaxLength(2000)
                         .HasColumnType("nvarchar(2000)");
 
@@ -380,47 +349,34 @@ namespace Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<decimal>("Amount")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<Guid>("BookingId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid?>("ContractId")
+                    b.Property<Guid>("ContractId")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<DateTime>("CreatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime2")
-                        .HasDefaultValueSql("GETUTCDATE()");
+                        .HasColumnType("datetime2");
 
                     b.Property<string>("Currency")
                         .IsRequired()
                         .HasMaxLength(10)
                         .HasColumnType("nvarchar(10)");
 
-                    b.Property<Guid>("LandlordId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<decimal?>("LandlordPayoutAmount")
+                    b.Property<decimal>("HeldAmount")
                         .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
 
-                    b.Property<DateTime?>("LandlordPayoutAt")
+                    b.Property<decimal?>("OwnerPayoutAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<DateTime?>("OwnerPayoutAt")
                         .HasColumnType("datetime2");
 
-                    b.Property<string>("LandlordPayoutTransactionId")
+                    b.Property<string>("OwnerPayoutTransactionId")
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
 
-                    b.Property<Guid?>("PaymentId")
+                    b.Property<Guid>("PaymentId")
                         .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("PaymentReference")
-                        .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
 
                     b.Property<decimal>("PlatformFee")
                         .HasPrecision(18, 2)
@@ -460,20 +416,10 @@ namespace Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<Guid>("StudentId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("TransactionType")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
-
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("datetime2");
 
                     b.HasKey("EscrowId");
-
-                    b.HasIndex("BookingId");
 
                     b.HasIndex("ContractId");
 
@@ -724,9 +670,7 @@ namespace Infrastructure.Migrations
                         .HasColumnType("datetime2");
 
                     b.Property<DateTime>("PaymentDate")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime2")
-                        .HasDefaultValueSql("GETUTCDATE()");
+                        .HasColumnType("datetime2");
 
                     b.Property<string>("PaymentMethod")
                         .IsRequired()
@@ -823,8 +767,8 @@ namespace Infrastructure.Migrations
 
                     b.Property<string>("UserId")
                         .IsRequired()
-                        .HasMaxLength(450)
-                        .HasColumnType("nvarchar(450)");
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
 
                     b.HasKey("HistoryId");
 
@@ -856,9 +800,7 @@ namespace Infrastructure.Migrations
                         .HasColumnType("decimal(18,2)");
 
                     b.Property<DateTime>("CreatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime2")
-                        .HasDefaultValueSql("GETUTCDATE()");
+                        .HasColumnType("datetime2");
 
                     b.Property<string>("Currency")
                         .IsRequired()
@@ -868,7 +810,7 @@ namespace Infrastructure.Migrations
                     b.Property<DateTime?>("EmailSentAt")
                         .HasColumnType("datetime2");
 
-                    b.Property<Guid?>("EscrowId")
+                    b.Property<Guid>("EscrowId")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<bool>("IsEmailSent")
@@ -955,17 +897,11 @@ namespace Infrastructure.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
 
-                    b.Property<string>("ClientSecret")
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
-
                     b.Property<DateTime?>("CompletedAt")
                         .HasColumnType("datetime2");
 
                     b.Property<DateTime>("CreatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime2")
-                        .HasDefaultValueSql("GETUTCDATE()");
+                        .HasColumnType("datetime2");
 
                     b.Property<string>("Currency")
                         .IsRequired()
@@ -989,10 +925,6 @@ namespace Infrastructure.Migrations
 
                     b.Property<string>("PaymobIntentionId")
                         .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
-
-                    b.Property<string>("PaymobNumericOrderId")
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
 
@@ -1324,7 +1256,7 @@ namespace Infrastructure.Migrations
                         {
                             Id = "admin-user-id-001",
                             AccessFailedCount = 0,
-                            ConcurrencyStamp = "42cee69b-2a69-4aa2-9c6a-d59340898d79",
+                            ConcurrencyStamp = "519659f7-8f35-49d0-8f11-e4c34ce36a42",
                             Email = "admin@studenthousing.com",
                             EmailConfirmed = true,
                             IsActive = true,
@@ -1333,9 +1265,9 @@ namespace Infrastructure.Migrations
                             LockoutEnabled = false,
                             NormalizedEmail = "ADMIN@STUDENTHOUSING.COM",
                             NormalizedUserName = "ADMIN@STUDENTHOUSING.COM",
-                            PasswordHash = "AQAAAAIAAYagAAAAEPv+FSwbUyBXVYjP6r8+znugb3GFBL5Xs9deb5RWTeP8b8HzlaXuhVdzfRDRrJd9Hw==",
+                            PasswordHash = "AQAAAAIAAYagAAAAEOt1rKn2JjVWhIZLXhZahdlCt7XJh2tIqWLKBIdEUVyq3nIPMDZ6KQUNjzoS6L128w==",
                             PhoneNumberConfirmed = false,
-                            SecurityStamp = "8ef8870b-745a-48bd-8f9f-ee911ad20881",
+                            SecurityStamp = "3f0cfdb5-c6a2-4bcc-a4bd-05921fa5aa58",
                             TwoFactorEnabled = false,
                             UserName = "admin@studenthousing.com"
                         });
@@ -1628,23 +1560,17 @@ namespace Infrastructure.Migrations
 
             modelBuilder.Entity("Domain.Entities.EscrowTransaction", b =>
                 {
-                    b.HasOne("Domain.Entities.Booking", "Booking")
-                        .WithMany()
-                        .HasForeignKey("BookingId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
                     b.HasOne("Domain.Entities.Contract", "Contract")
                         .WithMany("EscrowTransactions")
                         .HasForeignKey("ContractId")
-                        .OnDelete(DeleteBehavior.Restrict);
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
 
                     b.HasOne("Domain.Entities.Payment", "Payment")
                         .WithMany()
                         .HasForeignKey("PaymentId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.Navigation("Booking");
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
 
                     b.Navigation("Contract");
 
@@ -1743,7 +1669,8 @@ namespace Infrastructure.Migrations
                     b.HasOne("Domain.Entities.EscrowTransaction", "EscrowTransaction")
                         .WithMany("PaymentReceipts")
                         .HasForeignKey("EscrowId")
-                        .OnDelete(DeleteBehavior.Restrict);
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
 
                     b.HasOne("Domain.Entities.Payment", "Payment")
                         .WithMany("PaymentReceipts")

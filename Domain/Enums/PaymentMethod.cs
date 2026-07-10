@@ -12,6 +12,8 @@ namespace Domain.Enums
         VodafoneCash,
         Cash,
         CreditCard,
-        Card
+        Card,
+        Paymob,
+        Wallet
     }
 }

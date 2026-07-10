@@ -4,6 +4,7 @@ using Infrastructure.Context;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Infrastructure.Migrations
 {
     [DbContext(typeof(StudentHousingDBContext))]
-    partial class StudentHousingDBContextModelSnapshot : ModelSnapshot
+    [Migration("20260709220558_AddClientSecretToPaymentTransaction")]
+    partial class AddClientSecretToPaymentTransaction
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -391,9 +394,7 @@ namespace Infrastructure.Migrations
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<DateTime>("CreatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime2")
-                        .HasDefaultValueSql("GETUTCDATE()");
+                        .HasColumnType("datetime2");
 
                     b.Property<string>("Currency")
                         .IsRequired()
@@ -992,10 +993,6 @@ namespace Infrastructure.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
 
-                    b.Property<string>("PaymobNumericOrderId")
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
-
                     b.Property<string>("PaymobOrderId")
                         .IsRequired()
                         .HasMaxLength(500)
@@ -1324,7 +1321,7 @@ namespace Infrastructure.Migrations
                         {
                             Id = "admin-user-id-001",
                             AccessFailedCount = 0,
-                            ConcurrencyStamp = "42cee69b-2a69-4aa2-9c6a-d59340898d79",
+                            ConcurrencyStamp = "84224261-44f3-4da7-ac72-fe8706488b92",
                             Email = "admin@studenthousing.com",
                             EmailConfirmed = true,
                             IsActive = true,
@@ -1333,9 +1330,9 @@ namespace Infrastructure.Migrations
                             LockoutEnabled = false,
                             NormalizedEmail = "ADMIN@STUDENTHOUSING.COM",
                             NormalizedUserName = "ADMIN@STUDENTHOUSING.COM",
-                            PasswordHash = "AQAAAAIAAYagAAAAEPv+FSwbUyBXVYjP6r8+znugb3GFBL5Xs9deb5RWTeP8b8HzlaXuhVdzfRDRrJd9Hw==",
+                            PasswordHash = "AQAAAAIAAYagAAAAEObcBLBUMvz66BoMHmBX3HWNEX3aidneZhWPn0dZSnJClpPkUlX0OVhJg3N8D/v7vQ==",
                             PhoneNumberConfirmed = false,
-                            SecurityStamp = "8ef8870b-745a-48bd-8f9f-ee911ad20881",
+                            SecurityStamp = "96e297b1-ae0f-457e-8356-3bb28a0bffad",
                             TwoFactorEnabled = false,
                             UserName = "admin@studenthousing.com"
                         });
