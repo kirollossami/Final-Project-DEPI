@@ -78,6 +78,13 @@ public class NotificationService : INotificationService
 
     public async Task<NotificationResponse?> CreateNotificationAsync(NotificationCreateRequest request)
     {
+        if (string.IsNullOrWhiteSpace(request.UserId))
+            throw new ArgumentException("UserId cannot be null or empty", nameof(request));
+
+        var user = await _userManager.FindByIdAsync(request.UserId);
+        if (user == null)
+            throw new InvalidOperationException($"User with Id '{request.UserId}' does not exist in AspNetUsers");
+
         var notification = new Domain.Entities.Notification
         {
             NotificationId = Guid.NewGuid(),
@@ -120,6 +127,13 @@ public class NotificationService : INotificationService
 
     public async Task SendRealTimeNotificationAsync(string userId, string message, string type)
     {
+        if (string.IsNullOrWhiteSpace(userId))
+            throw new ArgumentException("UserId cannot be null or empty", nameof(userId));
+
+        var user = await _userManager.FindByIdAsync(userId);
+        if (user == null)
+            throw new InvalidOperationException($"User with Id '{userId}' does not exist in AspNetUsers");
+
         var notification = new Domain.Entities.Notification
         {
             NotificationId = Guid.NewGuid(),

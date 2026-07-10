@@ -320,15 +320,17 @@ public class AdminController : BaseController
             // Notify student and landlord
             try
             {
-                await _notificationService.SendRealTimeNotificationAsync(
-                    student?.UserId ?? string.Empty,
-                    "Contract has been uploaded for your booking. Please review and sign the contract.",
-                    NotificationTypes.ContractUploaded);
+                if (!string.IsNullOrEmpty(student?.UserId))
+                    await _notificationService.SendRealTimeNotificationAsync(
+                        student.UserId,
+                        "Contract has been uploaded for your booking. Please review and sign the contract.",
+                        NotificationTypes.ContractUploaded);
 
-                await _notificationService.SendRealTimeNotificationAsync(
-                    landlord?.UserId ?? string.Empty,
-                    "Contract has been uploaded for your booking. Please review and sign the contract.",
-                    NotificationTypes.ContractUploaded);
+                if (!string.IsNullOrEmpty(landlord?.UserId))
+                    await _notificationService.SendRealTimeNotificationAsync(
+                        landlord.UserId,
+                        "Contract has been uploaded for your booking. Please review and sign the contract.",
+                        NotificationTypes.ContractUploaded);
             }
             catch (Exception ex)
             {
@@ -496,15 +498,17 @@ public class AdminController : BaseController
                 var student = await _unitOfWork.Students.GetAsync(booking.StudentId);
                 var landlord = GetOwnerFromBooking(booking);
 
-                await _notificationService.SendRealTimeNotificationAsync(
-                    student?.UserId ?? string.Empty,
-                    "Your booking has been approved. The landlord has received the payment.",
-                    NotificationTypes.BookingApproved);
+                if (!string.IsNullOrEmpty(student?.UserId))
+                    await _notificationService.SendRealTimeNotificationAsync(
+                        student.UserId,
+                        "Your booking has been approved. The landlord has received the payment.",
+                        NotificationTypes.BookingApproved);
 
-                await _notificationService.SendRealTimeNotificationAsync(
-                    landlord?.UserId ?? string.Empty,
-                    "Booking has been approved. Payment has been released to your account.",
-                    NotificationTypes.BookingApproved);
+                if (!string.IsNullOrEmpty(landlord?.UserId))
+                    await _notificationService.SendRealTimeNotificationAsync(
+                        landlord.UserId,
+                        "Booking has been approved. Payment has been released to your account.",
+                        NotificationTypes.BookingApproved);
             }
             catch (Exception ex)
             {
@@ -602,15 +606,17 @@ public class AdminController : BaseController
                 var student = await _unitOfWork.Students.GetAsync(booking.StudentId);
                 var landlord = GetOwnerFromBooking(booking);
 
-                await _notificationService.SendRealTimeNotificationAsync(
-                    student?.UserId ?? string.Empty,
-                    $"Your booking has been rejected. Reason: {reason}. Your payment has been refunded.",
-                    NotificationTypes.BookingRejected);
+                if (!string.IsNullOrEmpty(student?.UserId))
+                    await _notificationService.SendRealTimeNotificationAsync(
+                        student.UserId,
+                        $"Your booking has been rejected. Reason: {reason}. Your payment has been refunded.",
+                        NotificationTypes.BookingRejected);
 
-                await _notificationService.SendRealTimeNotificationAsync(
-                    landlord?.UserId ?? string.Empty,
-                    $"Booking has been rejected. Reason: {reason}.",
-                    NotificationTypes.BookingRejected);
+                if (!string.IsNullOrEmpty(landlord?.UserId))
+                    await _notificationService.SendRealTimeNotificationAsync(
+                        landlord.UserId,
+                        $"Booking has been rejected. Reason: {reason}.",
+                        NotificationTypes.BookingRejected);
             }
             catch (Exception ex)
             {
