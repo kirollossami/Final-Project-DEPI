@@ -30,6 +30,9 @@ public class PaymentTransactionConfiguration : IEntityTypeConfiguration<PaymentT
         builder.Property(pt => pt.PaymobTransactionId)
             .HasMaxLength(500);
 
+        builder.Property(pt => pt.PaymobNumericOrderId)
+            .HasMaxLength(500);
+
         builder.Property(pt => pt.PaymentToken)
             .HasMaxLength(1000);
 
@@ -39,6 +42,9 @@ public class PaymentTransactionConfiguration : IEntityTypeConfiguration<PaymentT
         builder.Property(pt => pt.RawResponse)
             .HasMaxLength(5000);
 
+        builder.Property(pt => pt.ClientSecret)
+            .HasMaxLength(500);
+
         builder.Property(pt => pt.CallbackSuccess)
             .HasMaxLength(500);
 
@@ -47,6 +53,9 @@ public class PaymentTransactionConfiguration : IEntityTypeConfiguration<PaymentT
 
         builder.Property(pt => pt.CallbackFailed)
             .HasMaxLength(500);
+
+        builder.Property(pt => pt.CreatedAt)
+            .HasDefaultValueSql("GETUTCDATE()");
 
         builder.HasOne(pt => pt.Payment)
             .WithMany(p => p.PaymentTransactions)

@@ -71,10 +71,13 @@ public class AuthService : IAuthService
         // Optimize: Only query based on user's role
         var studentId = (Guid?)null;
         var landlordId = (Guid?)null;
+        var universityVerificationStatus = (int?)null;
 
         if (roles.Contains("Student"))
         {
-            studentId = (await _studentRepository.GetAll().FirstOrDefaultAsync(s => s.UserId == user.Id))?.StudentId;
+            var student = await _studentRepository.GetAll().FirstOrDefaultAsync(s => s.UserId == user.Id);
+            studentId = student?.StudentId;
+            universityVerificationStatus = (int?)student?.UniversityVerificationStatus;
         }
         else if (roles.Contains("LandLord"))
         {
@@ -113,7 +116,8 @@ public class AuthService : IAuthService
                 PhoneNumber = user.PhoneNumber,
                 Roles = roles.ToArray(),
                 StudentId = studentId,
-                LandLordId = landlordId
+                LandLordId = landlordId,
+                UniversityVerificationStatus = universityVerificationStatus
             }
         };
     }
@@ -215,7 +219,8 @@ public class AuthService : IAuthService
                 Email = user.Email,
                 PhoneNumber = user.PhoneNumber,
                 Roles = roles.ToArray(),
-                StudentId = student.StudentId
+                StudentId = student.StudentId,
+                UniversityVerificationStatus = (int)student.UniversityVerificationStatus
             }
         };
     }
@@ -568,10 +573,13 @@ public class AuthService : IAuthService
             // Optimize: Only query based on user's role
             var studentId = (Guid?)null;
             var landlordId = (Guid?)null;
+            var universityVerificationStatus = (int?)null;
 
             if (roles.Contains("Student"))
             {
-                studentId = (await _studentRepository.GetAll().FirstOrDefaultAsync(s => s.UserId == user.Id))?.StudentId;
+                var student = await _studentRepository.GetAll().FirstOrDefaultAsync(s => s.UserId == user.Id);
+                studentId = student?.StudentId;
+                universityVerificationStatus = (int?)student?.UniversityVerificationStatus;
             }
             else if (roles.Contains("LandLord"))
             {
@@ -610,7 +618,8 @@ public class AuthService : IAuthService
                     PhoneNumber = user.PhoneNumber,
                     Roles = roles.ToArray(),
                     StudentId = studentId,
-                    LandLordId = landlordId
+                    LandLordId = landlordId,
+                    UniversityVerificationStatus = universityVerificationStatus
                 }
             };
         }
@@ -745,10 +754,13 @@ public class AuthService : IAuthService
 
         var studentId = (Guid?)null;
         var landlordId = (Guid?)null;
+        var universityVerificationStatus = (int?)null;
 
         if (roles.Contains("Student"))
         {
-            studentId = (await _studentRepository.GetAll().FirstOrDefaultAsync(s => s.UserId == user.Id))?.StudentId;
+            var student = await _studentRepository.GetAll().FirstOrDefaultAsync(s => s.UserId == user.Id);
+            studentId = student?.StudentId;
+            universityVerificationStatus = (int?)student?.UniversityVerificationStatus;
         }
         else if (roles.Contains("LandLord"))
         {
@@ -787,7 +799,8 @@ public class AuthService : IAuthService
                 PhoneNumber = user.PhoneNumber,
                 Roles = roles.ToArray(),
                 StudentId = studentId,
-                LandLordId = landlordId
+                LandLordId = landlordId,
+                UniversityVerificationStatus = universityVerificationStatus
             }
         };
     }

@@ -1,3 +1,4 @@
+using Infrastructure.Repositories;
 using Microsoft.EntityFrameworkCore.Storage;
 using System;
 using System.Collections.Generic;
@@ -26,6 +27,7 @@ public interface IUnitOfWork : IDisposable
     IWishlistRepository Wishlists { get; }
     IComplaintRepository Complaints { get; }
     ICommissionRecordRepository CommissionRecords { get; }
+    IBalanceRepository Balances { get; }
     
     Task<int> SaveChangesAsync();
     Task<IDbContextTransaction> BeginTransactionAsync();
@@ -33,4 +35,10 @@ public interface IUnitOfWork : IDisposable
     Task RollbackTransactionAsync();
     Task ExecuteInTransactionAsync(Func<Task> operation);
     Task<T> ExecuteInTransactionAsync<T>(Func<Task<T>> operation);
+
+    /// <summary>
+    /// Returns a snapshot of all EF Core change-tracker entries for debug logging.
+    /// Each string has the form "EntityType | State | PKs".
+    /// </summary>
+    IEnumerable<string> GetTrackedEntities();
 }
