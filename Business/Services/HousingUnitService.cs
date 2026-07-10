@@ -217,7 +217,8 @@ public class HousingUnitService : IHousingUnitService
         }
         catch (Exception ex)
         {
-            throw new Exception($"Error creating housing unit: {ex.Message}", ex);
+            var innerMessage = ex.InnerException?.Message ?? "No inner exception";
+            throw new Exception($"Error creating housing unit: {ex.Message}. Inner: {innerMessage}", ex);
         }
     }
 
