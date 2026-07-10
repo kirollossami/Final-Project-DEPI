@@ -51,14 +51,24 @@ public class PaymentReceiptConfiguration : IEntityTypeConfiguration<PaymentRecei
         builder.Property(pr => pr.ReceiptPdfUrl)
             .HasMaxLength(2000);
 
+        // Always write CreatedAt from application — use HasDefaultValueSql as a safety net
+        builder.Property(pr => pr.CreatedAt)
+            .HasDefaultValueSql("GETUTCDATE()");
+
         builder.HasOne(pr => pr.Payment)
             .WithMany(p => p.PaymentReceipts)
             .HasForeignKey(pr => pr.PaymentId)
             .OnDelete(DeleteBehavior.Restrict);
 
+        // EscrowId is optional for PaymentReceived receipts (no escrow exists yet).
+        // Make the FK nullable so Guid.Empty / null receipts don't cause FK violations.
+        builder.Property(pr => pr.EscrowId)
+            .IsRequired(false);
+
         builder.HasOne(pr => pr.EscrowTransaction)
             .WithMany(e => e.PaymentReceipts)
             .HasForeignKey(pr => pr.EscrowId)
+            .IsRequired(false)
             .OnDelete(DeleteBehavior.Restrict);
     }
 }

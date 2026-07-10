@@ -20,6 +20,9 @@ public class PaymentConfiguration : IEntityTypeConfiguration<Payment>
         builder.Property(p => p.PaymentStatus)
             .HasConversion<string>();
 
+        builder.Property(p => p.PaymentDate)
+            .HasDefaultValueSql("GETUTCDATE()");
+
         builder.Property(p => p.TransactionId)
             .HasMaxLength(100);
 

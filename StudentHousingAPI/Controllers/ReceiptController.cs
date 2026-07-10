@@ -72,11 +72,6 @@ public class ReceiptController : BaseController
     /// <summary>
     /// Get a specific receipt by ID
     /// </summary>
-    /// <param name="receiptId">The ID of the receipt to retrieve</param>
-    /// <remarks>
-    /// Returns detailed information about a specific receipt.
-    /// Includes receipt number, amount, type, and PDF URL.
-    /// </remarks>
     [HttpGet("{receiptId}")]
     public async Task<IActionResult> GetReceiptById(Guid receiptId)
     {
@@ -90,8 +85,8 @@ public class ReceiptController : BaseController
                 return NotFound(new { Message = "Receipt not found" });
             }
 
-            // Verify ownership (users can only see their own receipts, admins can see all)
-            if (receipt.IssuedToName != userId && !HasRole("Admin"))
+            // Verify ownership — compare against IssuedToUserId, not IssuedToName
+            if (receipt.IssuedToUserId != userId && !HasRole("Admin"))
             {
                 return Forbid("You do not have permission to view this receipt");
             }
@@ -112,19 +107,6 @@ public class ReceiptController : BaseController
     /// <summary>
     /// Download receipt as PDF
     /// </summary>
-    /// <param name="receiptId">The ID of the receipt to download</param>
-    /// <remarks>
-    /// Downloads the receipt as a PDF file. The PDF is generated with payment details,
-    /// booking information, and transaction history.
-    /// 
-    /// PDF includes:
-    /// - Receipt number and issue date
-    /// - Payment details (amount, method, status)
-    /// - Booking information (property, duration, dates)
-    /// - Issued to information (name, role, email)
-    /// - Transaction reference
-    /// - Platform branding and contact information
-    /// </remarks>
     [HttpGet("{receiptId}/download")]
     public async Task<IActionResult> DownloadReceiptPdf(Guid receiptId)
     {
@@ -138,8 +120,8 @@ public class ReceiptController : BaseController
                 return NotFound(new { Message = "Receipt not found" });
             }
 
-            // Verify ownership
-            if (receipt.IssuedToName != userId && !HasRole("Admin"))
+            // Verify ownership — compare against IssuedToUserId, not IssuedToName
+            if (receipt.IssuedToUserId != userId && !HasRole("Admin"))
             {
                 return Forbid("You do not have permission to download this receipt");
             }
@@ -159,34 +141,33 @@ public class ReceiptController : BaseController
     }
 
     /// <summary>
-    /// Get receipt by payment ID
+    /// Get all receipts for a specific payment ID
     /// </summary>
-    /// <param name="paymentId">The ID of the payment associated with the receipt</param>
-    /// <remarks>
-    /// Returns the receipt associated with a specific payment.
-    /// Useful when navigating from payment history to receipt details.
-    /// </remarks>
     [HttpGet("payment/{paymentId}")]
     public async Task<IActionResult> GetReceiptByPaymentId(Guid paymentId)
     {
         try
         {
             var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userId))
+                return Unauthorized(new { Message = "User not identified" });
 
-            // For now, we'll get all receipts and filter by payment ID
-            // In a production scenario, you might want to add a dedicated repository method
-            var allReceipts = await _receiptService.GetReceiptsByUserIdAsync(userId ?? "");
-            var receipt = allReceipts.FirstOrDefault(); // This is simplified; adjust as needed
+            var receipts = await _receiptService.GetReceiptsByPaymentIdAsync(paymentId);
 
-            if (receipt == null)
-            {
-                return NotFound(new { Message = "Receipt not found for this payment" });
-            }
+            // Only return receipts that belong to the requesting user (unless admin)
+            if (!HasRole("Admin"))
+                receipts = receipts.Where(r => r.IssuedToUserId == userId);
+
+            var list = receipts.ToList();
+
+            if (!list.Any())
+                return NotFound(new { Message = "No receipts found for this payment" });
 
             return Ok(new
             {
                 Success = true,
-                Data = receipt
+                Data = list,
+                Count = list.Count
             });
         }
         catch (Exception ex)

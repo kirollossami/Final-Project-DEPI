@@ -10,7 +10,7 @@ public class EscrowTransactionConfiguration : IEntityTypeConfiguration<EscrowTra
     {
         builder.HasKey(e => e.EscrowId);
 
-        builder.Property(e => e.HeldAmount)
+        builder.Property(e => e.Amount)
             .HasPrecision(18, 2)
             .IsRequired();
 
@@ -20,6 +20,14 @@ public class EscrowTransactionConfiguration : IEntityTypeConfiguration<EscrowTra
 
         builder.Property(e => e.Status)
             .HasConversion<string>();
+
+        builder.Property(e => e.TransactionType)
+            .HasMaxLength(50)
+            .IsRequired();
+
+        builder.Property(e => e.PaymentReference)
+            .HasMaxLength(500)
+            .IsRequired();
 
         builder.Property(e => e.ReleasedByUserId)
             .HasMaxLength(500);
@@ -36,10 +44,10 @@ public class EscrowTransactionConfiguration : IEntityTypeConfiguration<EscrowTra
         builder.Property(e => e.RefundReason)
             .HasMaxLength(1000);
 
-        builder.Property(e => e.OwnerPayoutTransactionId)
+        builder.Property(e => e.LandlordPayoutTransactionId)
             .HasMaxLength(500);
 
-        builder.Property(e => e.OwnerPayoutAmount)
+        builder.Property(e => e.LandlordPayoutAmount)
             .HasPrecision(18, 2);
 
         builder.Property(e => e.PlatformFee)
@@ -50,14 +58,27 @@ public class EscrowTransactionConfiguration : IEntityTypeConfiguration<EscrowTra
             .HasPrecision(5, 2)
             .IsRequired();
 
+        builder.HasOne(e => e.Booking)
+            .WithMany()
+            .HasForeignKey(e => e.BookingId)
+            .OnDelete(DeleteBehavior.Restrict);
+
         builder.HasOne(e => e.Payment)
             .WithMany()
             .HasForeignKey(e => e.PaymentId)
+            .IsRequired(false)
             .OnDelete(DeleteBehavior.Restrict);
+
+        builder.Property(e => e.ContractId)
+            .IsRequired(false);
 
         builder.HasOne(e => e.Contract)
             .WithMany(c => c.EscrowTransactions)
             .HasForeignKey(e => e.ContractId)
+            .IsRequired(false)
             .OnDelete(DeleteBehavior.Restrict);
+
+        builder.Property(e => e.CreatedAt)
+            .HasDefaultValueSql("GETUTCDATE()");
     }
 }
