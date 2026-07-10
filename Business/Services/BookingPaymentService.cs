@@ -30,9 +30,9 @@ public class BookingPaymentService : IBookingPaymentService
     private readonly IReceiptService _receiptService;
     private readonly INotificationService _notificationService;
     private readonly IPaymentHistoryService _paymentHistoryService;
-    private readonly IBalanceService _balanceService;
-    private readonly UserManager<User> _userManager;
-    private readonly ILogger<BookingPaymentService> _logger;
+    private readonly IContractWorkflowService _contractWorkflowService;
+private readonly ILogger<BookingPaymentService> _logger;
+    private const decimal PlatformFeePercentage = 5.0m; // 5% platform fee
 
     public BookingPaymentService(
         IUnitOfWork unitOfWork,
@@ -40,8 +40,7 @@ public class BookingPaymentService : IBookingPaymentService
         IReceiptService receiptService,
         INotificationService notificationService,
         IPaymentHistoryService paymentHistoryService,
-        IBalanceService balanceService,
-        UserManager<User> userManager,
+        IContractWorkflowService contractWorkflowService,
         ILogger<BookingPaymentService> logger)
     {
         _unitOfWork = unitOfWork;
@@ -52,6 +51,7 @@ public class BookingPaymentService : IBookingPaymentService
         _balanceService = balanceService;
         _userManager = userManager;
         _logger = logger;
+        _contractWorkflowService = contractWorkflowService;
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -63,20 +63,32 @@ public class BookingPaymentService : IBookingPaymentService
         {
             var result = await _unitOfWork.ExecuteInTransactionAsync(async () =>
             {
+                // Step 1: Get booking details
                 var booking = await _unitOfWork.Bookings.GetAsync(request.BookingId);
                 if (booking == null)
                     return new BookingPaymentResponse { Success = false, Message = "Booking not found" };
 
-                if (booking.BookingStatus != BookingStatus.PendingPayment)
-                    return new BookingPaymentResponse
-                    {
-                        Success = false,
-                        Message = $"Booking cannot be paid. Current status: {booking.BookingStatus}"
-                    };
+                // Allow retrying payment from Pending, PaymentPending, or PaymentProcessing states
+                var payableStatuses = new[]
+                {
+                    BookingStatus.Pending,
+                    BookingStatus.PaymentPending,
+                    BookingStatus.PaymentProcessing
+                };
 
+                if (!payableStatuses.Contains(booking.BookingStatus))
+                    return new BookingPaymentResponse { Success = false, Message = $"Booking cannot be paid. Current status: {booking.BookingStatus}" };
+
+                // Guard: Paymob must be configured
                 if (string.IsNullOrWhiteSpace(request.CustomerEmail))
-                    return new BookingPaymentResponse { Success = false, Message = "CustomerEmail is required" };
+                    return new BookingPaymentResponse { Success = false, Message = "Missing required payment details (CustomerEmail)" };
 
+                // Step 2: Update booking status to PaymentPending
+                booking.BookingStatus = BookingStatus.PaymentPending;
+                booking.UpdatedAt = DateTime.UtcNow;
+                await _unitOfWork.Bookings.Update(booking);
+
+                // Step 3: Get or create payment record (reuse if already exists for this booking)
                 var payment = await _unitOfWork.Payments.GetByBookingIdAsync(booking.BookingId);
                 if (payment == null)
                 {
@@ -85,38 +97,33 @@ public class BookingPaymentService : IBookingPaymentService
                         PaymentId = Guid.NewGuid(),
                         BookingId = booking.BookingId,
                         Amount = booking.TotalPrice,
-                        PaymentMethod = PaymentMethod.Paymob,
+                        PaymentMethod = PaymentMethod.Card,
                         PaymentStatus = PaymentStatus.Pending,
                         PaymentDate = DateTime.UtcNow,
                         TransactionId = Guid.NewGuid().ToString()
-                        // ClientSecret will be set below after Paymob responds
                     };
                     await _unitOfWork.Payments.Insert(payment);
-                    // NOTE: Insert() only calls AddAsync() — NO SaveChanges yet.
-                    // The entity is now tracked by EF as EntityState.Added.
-                    // We can mutate its properties freely; the single SaveChanges
-                    // at the end of ExecuteInTransactionAsync will flush everything
-                    // in the correct FK order (Payment first, then PaymentTransaction).
                 }
                 else
                 {
+                    // Reset the existing payment for retry
                     payment.PaymentStatus = PaymentStatus.Pending;
                     payment.PaymentDate = DateTime.UtcNow;
                     payment.TransactionId = Guid.NewGuid().ToString();
                     payment.CompletedAt = null;
-                    payment.ClientSecret = null; // will be set below after Paymob responds
-                    payment.PaymentMethod = PaymentMethod.Paymob;
                     await _unitOfWork.Payments.Update(payment);
                 }
+                await _unitOfWork.SaveChangesAsync();
 
-                var paymobReq = new PaymobPaymentRequest
+                // Step 4: Initiate Paymob payment
+                var paymobRequest = new PaymobPaymentRequest
                 {
                     Amount = booking.TotalPrice,
                     Currency = "EGP",
                     CustomerName = request.CustomerName,
                     CustomerEmail = request.CustomerEmail,
                     CustomerPhone = request.CustomerPhone,
-                    Description = request.Description ?? $"Booking {booking.BookingId}",
+                    Description = request.Description ?? $"Booking Payment for {booking.BookingId}",
                     Metadata = new Dictionary<string, string>
                     {
                         { "BookingId", booking.BookingId.ToString() },
@@ -124,59 +131,106 @@ public class BookingPaymentService : IBookingPaymentService
                     }
                 };
 
-                var paymobResp = await _paymobService.InitiatePaymentAsync(paymobReq);
-                if (!paymobResp.Success || string.IsNullOrEmpty(paymobResp.PaymentUrl))
-                    return new BookingPaymentResponse { Success = false, Message = $"Paymob error: {paymobResp.Message}" };
+                var paymobResponse = await _paymobService.InitiatePaymentAsync(paymobRequest);
 
-                // CRITICAL: store ClientSecret on the Payment entity so the GET redirect
-                // callback can resolve the PaymentTransaction even when no client_secret
-                // is present in the Paymob query params.
-                // Because Insert() does NOT call SaveChanges, the entity is still tracked
-                // as EntityState.Added — mutating it here is safe and will be saved by the
-                // single SaveChangesAsync() at the end of ExecuteInTransactionAsync.
-                // For an existing payment (EntityState.Modified) Update() was already called
-                // above, so mutating the property here is also safe.
-                payment.ClientSecret = paymobResp.PaymentToken;
-                // DO NOT call Update(payment) here — that would cause EF to generate a
-                // conflicting entity state for new payments (Added+Modified) which triggers
-                // the FK violation when SaveChanges runs later.
+                if (!paymobResponse.Success || string.IsNullOrEmpty(paymobResponse.PaymentUrl))
+                    return new BookingPaymentResponse { Success = false, Message = $"Payment initiation failed: {paymobResponse.Message}" };
 
-                var txn = new PaymentTransaction
+                // Step 5: Create payment transaction record
+                var paymentTransaction = new PaymentTransaction
                 {
                     TransactionId = Guid.NewGuid(),
                     PaymentId = payment.PaymentId,
-                    PaymobOrderId = paymobResp.OrderId ?? string.Empty,
-                    PaymobIntentionId = paymobResp.IntentionId ?? string.Empty,
+                    PaymobOrderId = paymobResponse.OrderId ?? string.Empty,
+                    PaymobIntentionId = paymobResponse.IntentionId ?? string.Empty,
                     Amount = booking.TotalPrice,
                     Currency = "EGP",
                     GatewayStatus = PaymentGatewayStatus.Pending,
-                    PaymentToken = paymobResp.PaymentToken,
-                    PaymentUrl = paymobResp.PaymentUrl,
-                    RawResponse = paymobResp.RawResponse,
-                    ClientSecret = paymobResp.PaymentToken   // same value, two columns for query flexibility
+                    PaymentToken = paymobResponse.PaymentToken,
+                    PaymentUrl = paymobResponse.PaymentUrl,
+                    RawResponse = paymobResponse.RawResponse
                 };
-                _logger.LogInformation("PaymentTransaction created. PaymobOrderId={OrderId}, PaymobIntentionId={IntentionId}, PaymentToken={Token}",
-                    txn.PaymobOrderId, txn.PaymobIntentionId, txn.PaymentToken?.Substring(0, Math.Min(20, txn.PaymentToken?.Length ?? 0)) + "...");
-                await _unitOfWork.PaymentTransactions.Insert(txn);
 
-                _logger.LogInformation("Payment initiated for booking {BookingId}", booking.BookingId);
+                await _unitOfWork.PaymentTransactions.Insert(paymentTransaction);
+                await _unitOfWork.SaveChangesAsync();
 
+                // Step 6: Update booking status to PaymentProcessing
+                booking.BookingStatus = BookingStatus.PaymentProcessing;
+                await _unitOfWork.Bookings.Update(booking);
+                await _unitOfWork.SaveChangesAsync();
+
+                _logger.LogInformation($"Payment initiated successfully for booking {booking.BookingId}.");
+
+                // Non-transactional notification after commit
+                _ = Task.Run(async () => await _notificationService.SendRealTimeNotificationAsync(
+                    booking.Student?.UserId ?? string.Empty,
+                    "Payment initiated for your booking. Please complete the payment to proceed.",
+                    "PaymentInitiated"));
+
+                // Return success; payment history will be recorded after transaction
                 return new BookingPaymentResponse
                 {
                     Success = true,
                     Message = "Payment initiated successfully",
                     PaymentId = payment.PaymentId,
-                    PaymentUrl = paymobResp.PaymentUrl
+                    PaymentUrl = paymobResponse.PaymentUrl
                 };
             });
 
+            // After transaction has completed, record payment history in a non-fatal manner
+            try
+            {
+                var paymentRec = await _unitOfWork.Payments.GetByBookingIdAsync(request.BookingId);
+                if (paymentRec != null)
+                {
+                    var studentRec = await _unitOfWork.Students.GetAsync((await _unitOfWork.Payments.GetByBookingIdAsync(request.BookingId))?.Booking?.StudentId ?? Guid.Empty);
+                    var historyMetadata = new Dictionary<string, object>
+                    {
+                        { "PaymobOrderId", (await _unitOfWork.PaymentTransactions.GetByPaymobOrderIdAsync(""))?.PaymobOrderId ?? string.Empty },
+                        { "PaymentMethod", PaymentMethod.Card.ToString() }
+                    };
+
+                    _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            await _paymentHistoryService.RecordPaymentEventAsync(
+                                paymentRec.PaymentId,
+                                request.BookingId,
+                                null,
+                                studentRec?.UserId ?? string.Empty,
+                                "PaymentInitiated",
+                                $"Payment initiated for booking. Amount: {paymentRec.Amount} EGP. Awaiting completion.",
+                                paymentRec.Amount,
+                                BookingStatus.Pending.ToString(),
+                                BookingStatus.PaymentProcessing.ToString(),
+                                "System",
+                                "System",
+                                metadata: historyMetadata);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(ex, "Non-fatal: failed to record payment history after initiation");
+                        }
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Non-fatal: failed to kick off payment history recording after transaction");
+            }
+
+            // Return the transaction result to the caller
             return result;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error initiating booking payment");
-            var msg = ex.InnerException?.InnerException?.Message ?? ex.InnerException?.Message ?? ex.Message;
-            return new BookingPaymentResponse { Success = false, Message = $"Error: {msg}" };
+            // Unwrap DbUpdateException to expose the actual SQL error
+            var innerMessage = ex.InnerException?.InnerException?.Message
+                            ?? ex.InnerException?.Message
+                            ?? ex.Message;
+            return new BookingPaymentResponse { Success = false, Message = $"An error occurred: {innerMessage}" };
         }
     }
 
@@ -359,14 +413,36 @@ public class BookingPaymentService : IBookingPaymentService
                     return;
                 }
 
-                _logger.LogInformation("╠══ OK: PaymentTransaction. TxnId={TxnId} PaymentId={PaymentId} GatewayStatus={Status}", dbTxn.TransactionId, dbTxn.PaymentId, dbTxn.GatewayStatus);
+            if (isSuccess)
+            {
+                // Do NOT auto-approve or generate contract. Keep booking as Pending and mark payment as Paid.
+                payment.PaymentStatus = PaymentStatus.Completed;
+                payment.CompletedAt = DateTime.UtcNow;
+                await _unitOfWork.Payments.Update(payment);
 
-                // Only set PaymobTransactionId if transactionId is a valid numeric string
-                // (prevents clobbering with intention IDs during manual workflow retries)
-                if (!string.IsNullOrWhiteSpace(transactionId) && long.TryParse(transactionId, out _))
-                {
-                    dbTxn.PaymobTransactionId = transactionId;
-                }
+                // Keep booking status as Pending (waiting for admin review). Update timestamp.
+                booking.BookingStatus = BookingStatus.Pending;
+                booking.UpdatedAt = DateTime.UtcNow;
+                await _unitOfWork.Bookings.Update(booking);
+
+                // Record payment history - Payment Completed
+                await _paymentHistoryService.RecordPaymentEventAsync(
+                    payment.PaymentId,
+                    booking.BookingId,
+                    null,
+                    student?.UserId ?? string.Empty,
+                    "PaymentCompleted",
+                    $"Payment completed successfully. Amount: {payment.Amount} EGP. Awaiting admin approval.",
+                    payment.Amount,
+                    previousStatus,
+                    BookingStatus.Pending.ToString(),
+                    "System",
+                    "System",
+                    metadata: new Dictionary<string, object>
+                    {
+                        { "PaymobOrderId", orderId },
+                        { "PaymobTransactionId", transactionId }
+                    });
 
                 // Only overwrite PaymobOrderId when Paymob sends a NEW numeric order ID
                 // (the intention ID is preserved in PaymobIntentionId — don't clobber it)
@@ -376,65 +452,13 @@ public class BookingPaymentService : IBookingPaymentService
                     dbTxn.PaymobOrderId = orderId;
                 }
 
-                dbTxn.GatewayStatus = isSuccess ? PaymentGatewayStatus.Success : PaymentGatewayStatus.Failed;
-                dbTxn.CallbackProcessedAt = DateTime.UtcNow;
-                dbTxn.CompletedAt = isSuccess ? DateTime.UtcNow : null;
+                // Notify admins to review this paid booking
+                _ = Task.Run(async () => await _notificationService.SendNotificationToRoleAsync(
+                    "Admin",
+                    $"Booking {booking.BookingId} has been paid and awaits your approval.",
+                    "BookingPaid"));
 
-                // Write audit columns so the row is self-diagnosable in the DB
-                if (isSuccess)
-                    dbTxn.CallbackSuccess = "true";
-                else
-                    dbTxn.CallbackFailed = "true";
-                dbTxn.CallbackPending = null; // clear any previous pending flag
-
-                // 2. Find Payment — check idempotency BEFORE touching any other entities
-                currentStep = "Loading Payment entity";
-                _logger.LogInformation("╠══ STEP: {Step} | PaymentId={PaymentId}", currentStep, dbTxn.PaymentId);
-                var payment = await _unitOfWork.Payments.GetAsync(dbTxn.PaymentId);
-                if (payment == null)
-                {
-                    _logger.LogError("╠══ FAILED: Payment {PaymentId} not found", dbTxn.PaymentId);
-                    phaseOneResult = new BookingPaymentResponse { Success = false, Message = "Payment record not found" };
-                    return;
-                }
-                _logger.LogInformation("╠══ OK: Payment. Id={PaymentId} BookingId={BookingId} CurrentStatus={Status}", payment.PaymentId, payment.BookingId, payment.PaymentStatus);
-
-                // 3. Find Booking
-                currentStep = "Loading Booking entity";
-                _logger.LogInformation("╠══ STEP: {Step} | BookingId={BookingId}", currentStep, payment.BookingId);
-                var booking = await _unitOfWork.Bookings.GetAsync(payment.BookingId);
-                if (booking == null)
-                {
-                    _logger.LogError("╠══ FAILED: Booking {BookingId} not found", payment.BookingId);
-                    phaseOneResult = new BookingPaymentResponse { Success = false, Message = "Booking not found" };
-                    return;
-                }
-                _logger.LogInformation("╠══ OK: Booking. Id={BookingId} CurrentStatus={Status}", booking.BookingId, booking.BookingStatus);
-
-                // ── IDEMPOTENCY GUARD ─────────────────────────────────────────
-                // Must come BEFORE any further Update() calls. When payment is already
-                // Completed we return immediately without marking any entities dirty —
-                // this prevents EF tracking conflicts at SaveChanges (duplicate escrow,
-                // conflicting PaymentTransaction state, etc.).
-                if (payment.PaymentStatus == PaymentStatus.Completed)
-                {
-                    _logger.LogInformation("╠══ IDEMPOTENCY: Payment {PaymentId} already Completed. BookingStatus={Status} — skipping all writes, returning early.", payment.PaymentId, booking.BookingStatus);
-                    // Fix booking status if it somehow got stuck on PendingPayment
-                    if (booking.BookingStatus == BookingStatus.PendingPayment)
-                    {
-                        booking.BookingStatus = BookingStatus.WaitingForContract;
-                        booking.UpdatedAt = DateTime.UtcNow;
-                        await _unitOfWork.Bookings.Update(booking);
-                    }
-                    phaseOneResult = new BookingPaymentResponse
-                    {
-                        Success = true,
-                        Message = "Payment already processed",
-                        PaymentId = payment.PaymentId,
-                        BookingId = booking.BookingId
-                    };
-                    return;
-                }
+                _logger.LogInformation($"Payment processed and booking {booking.BookingId} set to Pending awaiting admin approval");
 
                 // Only update PaymentTransaction now that we know this is a fresh (non-duplicate) callback
                 currentStep = "Calling Update(dbTxn)";
@@ -453,33 +477,14 @@ public class BookingPaymentService : IBookingPaymentService
                 // ── FAILURE ──────────────────────────────────────────────────
                 if (!isSuccess)
                 {
-                    currentStep = "Marking Payment Failed";
-                    _logger.LogInformation("╠══ STEP: {Step}", currentStep);
-                    payment.PaymentStatus = PaymentStatus.Failed;
-                    payment.TransactionId = transactionId;
-                    await _unitOfWork.Payments.Update(payment);
-                    booking.BookingStatus = BookingStatus.PendingPayment;
-                    booking.UpdatedAt = DateTime.UtcNow;
-                    await _unitOfWork.Bookings.Update(booking);
-                    phaseOneResult = new BookingPaymentResponse { Success = false, Message = "Payment failed", PaymentId = payment.PaymentId };
-                    return;
-                }
-
-                // ── SUCCESS ───────────────────────────────────────────────────
-
-                // 4. Mark payment Completed
-                currentStep = "Marking Payment Completed";
-                _logger.LogInformation("╠══ STEP: {Step} | PaymentId={PaymentId} OldStatus={Old}→New=Completed", currentStep, payment.PaymentId, payment.PaymentStatus);
-                payment.PaymentStatus = PaymentStatus.Completed;
-                payment.CompletedAt = DateTime.UtcNow;
-                payment.TransactionId = transactionId;
-                await _unitOfWork.Payments.Update(payment);
-                _logger.LogInformation("╠══ OK: Payment.Update() called. EF will flush on SaveChanges.");
-
-                // 5. Move booking to WaitingForContract
-                currentStep = "Updating Booking to WaitingForContract";
-                _logger.LogInformation("╠══ STEP: {Step} | BookingId={BookingId} OldStatus={Old}→New=WaitingForContract", currentStep, booking.BookingId, booking.BookingStatus);
-                booking.BookingStatus = BookingStatus.WaitingForContract;
+                    Success = true,
+                    Message = "Payment completed successfully. Awaiting admin approval.",
+                    PaymentId = payment.PaymentId
+                };
+            }
+            else
+            {
+                booking.BookingStatus = BookingStatus.PaymentPending;
                 booking.UpdatedAt = DateTime.UtcNow;
                 await _unitOfWork.Bookings.Update(booking);
                 _logger.LogInformation("╠══ OK: Booking.Update() called.");
@@ -715,11 +720,55 @@ public class BookingPaymentService : IBookingPaymentService
             return new BookingPaymentResponse { Success = false, Message = $"Error at step '{currentStep}': {ex.Message}" };
         }
 
-        if (phaseOneResult == null || !phaseOneResult.Success)
-        {
-            _logger.LogError("╠══ Phase 1 result indicates failure or null. phaseOneResult={Result}", phaseOneResult?.Message ?? "null");
-            return phaseOneResult ?? new BookingPaymentResponse { Success = false, Message = "Unknown error" };
-        }
+            // Step 3: Update booking with contract info
+            var previousStatus = booking.BookingStatus.ToString();
+            booking.ContractId = contractResponse.ContractId;
+            booking.ContractPdfUrl = contractResponse.GeneratedPdfUrl;
+            booking.BookingStatus = BookingStatus.WaitingStudentSignature;
+            booking.UpdatedAt = DateTime.UtcNow;
+            await _unitOfWork.Bookings.Update(booking);
+
+            // Step 4: Create escrow transaction
+            var escrowResponse = await _escrowService.CreateEscrowAsync(
+                payment.PaymentId,
+                contractResponse.ContractId,
+                PlatformFeePercentage);
+
+            // Step 5: Record payment history - Escrow Created
+            await _paymentHistoryService.RecordPaymentEventAsync(
+                payment.PaymentId,
+                booking.BookingId,
+                escrowResponse.EscrowId,
+                student.UserId ?? string.Empty,
+                "EscrowCreated",
+                $"Escrow created to hold payment. Amount: {escrowResponse.HeldAmount} EGP. Platform Fee: {escrowResponse.PlatformFee} EGP",
+                escrowResponse.HeldAmount,
+                previousStatus,
+                BookingStatus.WaitingStudentSignature.ToString(),
+                "System",
+                "System",
+                metadata: new Dictionary<string, object>
+                {
+                    { "EscrowId", escrowResponse.EscrowId },
+                    { "HeldAmount", escrowResponse.HeldAmount },
+                    { "PlatformFeePercentage", PlatformFeePercentage }
+                });
+
+            // Step 6: Generate receipt for student
+            var receiptRequest = new ReceiptGenerationRequest
+            {
+                PaymentId = payment.PaymentId,
+                EscrowId = escrowResponse.EscrowId,
+                Type = ReceiptType.PaymentReceived,
+                IssuedToUserId = student.UserId ?? string.Empty,
+                IssuedToRole = "Student",
+                IssuedToName = student.User?.UserName ?? "Unknown",
+                AdditionalData = new Dictionary<string, object>
+                {
+                    { "BookingId", booking.BookingId },
+                    { "ContractId", contractResponse.ContractId }
+                }
+            };
 
         _logger.LogInformation("╠══ Phase 1 SUCCESS. PaymentId={PaymentId} BookingId={BookingId}", phaseOneResult.PaymentId, phaseOneResult.BookingId);
 
