@@ -150,68 +150,75 @@ public class HousingUnitService : IHousingUnitService
 
     public async Task<HousingUnitResponse?> CreateHousingUnitAsync(HousingUnitCreateRequest request)
     {
-        // Check if landlord is verified
-        var isVerified = await _landLordService.IsLandlordVerifiedAsync(request.LandLordId);
-        if (!isVerified)
+        try
         {
-            return null;
+            // Check if landlord is verified
+            var isVerified = await _landLordService.IsLandlordVerifiedAsync(request.LandLordId);
+            if (!isVerified)
+            {
+                return null;
+            }
+
+            var housingUnit = new Domain.Entities.HousingUnit
+            {
+                HousingUnitId = Guid.NewGuid(),
+                LandLordId = request.LandLordId,
+                Title = request.Title,
+                Description = request.Description,
+                Address = request.Address,
+                City = request.City,
+                Area = request.Area,
+                Price = request.Price,
+                BaseMonthlyPrice = request.BaseMonthlyPrice,
+                UnitImageUrl = request.UnitImageUrl,
+                VideoUrl = request.VideoUrl,
+                GenderAllowed = request.GenderAllowed,
+                Rules = request.Rules,
+                Location = request.Location,
+                Latitude = request.Latitude,
+                Longitude = request.Longitude,
+                NumberOfRooms = request.NumberOfRooms,
+                IsAvailable = request.IsAvailable,
+                AverageRating = 0,
+                ReviewCount = 0,
+                IsDeleted = false,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            await _housingUnitRepository.Insert(housingUnit);
+            await _housingUnitRepository.CommitAsync();
+
+            return new HousingUnitResponse
+            {
+                HousingUnitId = housingUnit.HousingUnitId,
+                LandLordId = housingUnit.LandLordId,
+                Title = housingUnit.Title,
+                Description = housingUnit.Description,
+                Address = housingUnit.Address,
+                City = housingUnit.City,
+                Area = housingUnit.Area,
+                Price = housingUnit.Price,
+                BaseMonthlyPrice = housingUnit.BaseMonthlyPrice,
+                UnitImageUrl = housingUnit.UnitImageUrl,
+                VideoUrl = housingUnit.VideoUrl,
+                GenderAllowed = housingUnit.GenderAllowed,
+                Rules = housingUnit.Rules,
+                Location = housingUnit.Location,
+                Latitude = housingUnit.Latitude,
+                Longitude = housingUnit.Longitude,
+                NumberOfRooms = housingUnit.NumberOfRooms,
+                IsAvailable = housingUnit.IsAvailable,
+                AverageRating = housingUnit.AverageRating,
+                ReviewCount = housingUnit.ReviewCount,
+                IsDeleted = housingUnit.IsDeleted,
+                CreatedAt = housingUnit.CreatedAt,
+                UpdatedAt = housingUnit.UpdatedAt
+            };
         }
-
-        var housingUnit = new Domain.Entities.HousingUnit
+        catch (Exception ex)
         {
-            HousingUnitId = Guid.NewGuid(),
-            LandLordId = request.LandLordId,
-            Title = request.Title,
-            Description = request.Description,
-            Address = request.Address,
-            City = request.City,
-            Area = request.Area,
-            Price = request.Price,
-            BaseMonthlyPrice = request.BaseMonthlyPrice,
-            UnitImageUrl = request.UnitImageUrl,
-            VideoUrl = request.VideoUrl,
-            GenderAllowed = request.GenderAllowed,
-            Rules = request.Rules,
-            Location = request.Location,
-            Latitude = request.Latitude,
-            Longitude = request.Longitude,
-            NumberOfRooms = request.NumberOfRooms,
-            IsAvailable = request.IsAvailable,
-            AverageRating = 0,
-            ReviewCount = 0,
-            IsDeleted = false,
-            CreatedAt = DateTime.UtcNow
-        };
-
-        await _housingUnitRepository.Insert(housingUnit);
-        await _housingUnitRepository.CommitAsync();
-
-        return new HousingUnitResponse
-        {
-            HousingUnitId = housingUnit.HousingUnitId,
-            LandLordId = housingUnit.LandLordId,
-            Title = housingUnit.Title,
-            Description = housingUnit.Description,
-            Address = housingUnit.Address,
-            City = housingUnit.City,
-            Area = housingUnit.Area,
-            Price = housingUnit.Price,
-            BaseMonthlyPrice = housingUnit.BaseMonthlyPrice,
-            UnitImageUrl = housingUnit.UnitImageUrl,
-            VideoUrl = housingUnit.VideoUrl,
-            GenderAllowed = housingUnit.GenderAllowed,
-            Rules = housingUnit.Rules,
-            Location = housingUnit.Location,
-            Latitude = housingUnit.Latitude,
-            Longitude = housingUnit.Longitude,
-            NumberOfRooms = housingUnit.NumberOfRooms,
-            IsAvailable = housingUnit.IsAvailable,
-            AverageRating = housingUnit.AverageRating,
-            ReviewCount = housingUnit.ReviewCount,
-            IsDeleted = housingUnit.IsDeleted,
-            CreatedAt = housingUnit.CreatedAt,
-            UpdatedAt = housingUnit.UpdatedAt
-        };
+            throw new Exception($"Error creating housing unit: {ex.Message}", ex);
+        }
     }
 
     public async Task<HousingUnitResponse?> UpdateHousingUnitAsync(HousingUnitUpdateRequest request)
