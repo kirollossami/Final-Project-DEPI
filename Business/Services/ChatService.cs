@@ -235,12 +235,24 @@ public class ChatService : IChatService
 
     public async Task<List<ConversationResponse>> GetUserConversationsAsync(string userId)
     {
-        var conversations = await _conversationRepository.GetAll()
+        var conversationIds = await _conversationRepository.GetAll()
             .Where(c => c.StudentUserId == userId || c.LandLordUserId == userId)
             .OrderByDescending(c => c.UpdatedAt ?? c.CreatedAt)
+            .Select(c => c.ConversationId)
             .ToListAsync();
 
-        var userIds = conversations
+        if (conversationIds.Count == 0)
+            return new List<ConversationResponse>();
+
+        var conversations = await _conversationRepository.GetAll()
+            .Where(c => conversationIds.Contains(c.ConversationId))
+            .ToListAsync();
+
+        var ordered = conversationIds
+            .Select(id => conversations.First(c => c.ConversationId == id))
+            .ToList();
+
+        var userIds = ordered
             .SelectMany(c => new[] { c.StudentUserId, c.LandLordUserId })
             .Distinct()
             .ToList();
@@ -249,16 +261,28 @@ public class ChatService : IChatService
             .Where(u => userIds.Contains(u.Id))
             .ToDictionaryAsync(u => u.Id, u => u.UserName ?? u.Email ?? "Unknown");
 
-        return conversations.Select(c => new ConversationResponse
+        var lastMessages = await _messageRepository.GetAll()
+            .Where(m => conversationIds.Contains(m.ConversationId))
+            .GroupBy(m => m.ConversationId)
+            .Select(g => g.OrderByDescending(m => m.SentAt).First())
+            .ToDictionaryAsync(m => m.ConversationId);
+
+        return ordered.Select(c =>
         {
-            ConversationId = c.ConversationId,
-            BookingId = c.BookingId,
-            HousingUnitId = c.HousingUnitId,
-            StudentUserId = c.StudentUserId,
-            LandLordUserId = c.LandLordUserId,
-            StudentName = users.GetValueOrDefault(c.StudentUserId),
-            LandlordName = users.GetValueOrDefault(c.LandLordUserId),
-            CreatedAt = c.CreatedAt
+            var last = lastMessages.GetValueOrDefault(c.ConversationId);
+            return new ConversationResponse
+            {
+                ConversationId = c.ConversationId,
+                BookingId = c.BookingId,
+                HousingUnitId = c.HousingUnitId,
+                StudentUserId = c.StudentUserId,
+                LandLordUserId = c.LandLordUserId,
+                StudentName = users.GetValueOrDefault(c.StudentUserId),
+                LandlordName = users.GetValueOrDefault(c.LandLordUserId),
+                LastMessage = last?.Content,
+                LastMessageAt = last?.SentAt,
+                CreatedAt = c.CreatedAt
+            };
         }).ToList();
     }
 

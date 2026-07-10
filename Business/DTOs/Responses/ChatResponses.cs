@@ -9,6 +9,8 @@ public class ConversationResponse
     public string LandLordUserId { get; set; }
     public string? StudentName { get; set; }
     public string? LandlordName { get; set; }
+    public string? LastMessage { get; set; }
+    public DateTime? LastMessageAt { get; set; }
     public DateTime CreatedAt { get; set; }
 }
 
