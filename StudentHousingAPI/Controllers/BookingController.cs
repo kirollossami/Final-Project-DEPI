@@ -64,15 +64,24 @@ public class BookingController : BaseController
             {
                 return BadRequest("Invalid booking request or booking conflict");
             }
-            try { await _notificationService.SendRealTimeNotificationAsync(request.StudentId.ToString(), "Your booking has been created successfully.", NotificationTypes.BookingCreated); } catch { }
             try
             {
-                var unit = await _unitOfWork.HousingUnits.GetAsync(request.HousingUnitId ?? Guid.Empty);
-                if (unit != null)
+                var student = await _unitOfWork.Students.GetAsync(request.StudentId);
+                if (!string.IsNullOrEmpty(student?.UserId))
+                    await _notificationService.SendRealTimeNotificationAsync(student.UserId, "Your booking has been created successfully.", NotificationTypes.BookingCreated);
+            }
+            catch { }
+            try
+            {
+                if (booking.HousingUnitId.HasValue)
                 {
-                    var landlord = await _unitOfWork.LandLords.GetAsync(unit.LandLordId);
-                    if (landlord?.UserId != null)
-                        await _notificationService.SendRealTimeNotificationAsync(landlord.UserId, "A new booking has been made for your property.", NotificationTypes.NewBooking);
+                    var unit = await _unitOfWork.HousingUnits.GetAsync(booking.HousingUnitId.Value);
+                    if (unit != null)
+                    {
+                        var landlord = await _unitOfWork.LandLords.GetAsync(unit.LandLordId);
+                        if (landlord?.UserId != null)
+                            await _notificationService.SendRealTimeNotificationAsync(landlord.UserId, "A new booking has been made for your property.", NotificationTypes.NewBooking);
+                    }
                 }
             }
             catch { }
@@ -123,7 +132,13 @@ public class BookingController : BaseController
         var result = await _bookingService.CreateMultiRoomBookingAsync(request);
         if (result != null && result.Any())
         {
-            try { await _notificationService.SendRealTimeNotificationAsync(request.StudentId.ToString(), "Your multi-room booking has been created.", NotificationTypes.MultiRoomBookingCreated); } catch { }
+            try
+            {
+                var student = await _unitOfWork.Students.GetAsync(request.StudentId);
+                if (!string.IsNullOrEmpty(student?.UserId))
+                    await _notificationService.SendRealTimeNotificationAsync(student.UserId, "Your multi-room booking has been created.", NotificationTypes.MultiRoomBookingCreated);
+            }
+            catch { }
         }
         return Ok(result);
     }
@@ -463,10 +478,11 @@ public class BookingController : BaseController
                 }
                 else
                 {
-                    await _notificationService.SendRealTimeNotificationAsync(
-                        landlord?.UserId ?? string.Empty,
-                        "Student has signed the contract. Please review and sign.",
-                        NotificationTypes.StudentSigned);
+                    if (!string.IsNullOrEmpty(landlord?.UserId))
+                        await _notificationService.SendRealTimeNotificationAsync(
+                            landlord.UserId,
+                            "Student has signed the contract. Please review and sign.",
+                            NotificationTypes.StudentSigned);
                 }
             }
             catch (Exception ex)
@@ -588,10 +604,11 @@ public class BookingController : BaseController
                 }
                 else
                 {
-                    await _notificationService.SendRealTimeNotificationAsync(
-                        student?.UserId ?? string.Empty,
-                        "Landlord has signed the contract. Please review and sign.",
-                        NotificationTypes.LandlordSigned);
+                    if (!string.IsNullOrEmpty(student?.UserId))
+                        await _notificationService.SendRealTimeNotificationAsync(
+                            student.UserId,
+                            "Landlord has signed the contract. Please review and sign.",
+                            NotificationTypes.LandlordSigned);
                 }
             }
             catch (Exception ex)

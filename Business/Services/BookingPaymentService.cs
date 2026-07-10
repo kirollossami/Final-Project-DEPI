@@ -160,11 +160,9 @@ public class BookingPaymentService : IBookingPaymentService
 
                 _logger.LogInformation($"Payment initiated successfully for booking {booking.BookingId}.");
 
-                // Non-transactional notification after commit
-                _ = Task.Run(async () => await _notificationService.SendRealTimeNotificationAsync(
-                    booking.Student?.UserId ?? string.Empty,
-                    "Payment initiated for your booking. Please complete the payment to proceed.",
-                    "PaymentInitiated"));
+                // Resolve student UserId inside transaction (before commit) for post-commit notification
+                var notifyStudent = await _unitOfWork.Students.GetAsync(booking.StudentId);
+                var notifyStudentUserId = notifyStudent?.UserId;
 
                 // Return success; payment history will be recorded after transaction
                 return new BookingPaymentResponse
@@ -172,9 +170,26 @@ public class BookingPaymentService : IBookingPaymentService
                     Success = true,
                     Message = "Payment initiated successfully",
                     PaymentId = payment.PaymentId,
-                    PaymentUrl = paymobResponse.PaymentUrl
+                    PaymentUrl = paymobResponse.PaymentUrl,
+                    StudentUserId = notifyStudentUserId
                 };
             });
+
+            // Post-commit notification (non-fatal, outside transaction and DbContext scope)
+            if (result.Success && !string.IsNullOrEmpty(result.StudentUserId))
+            {
+                try
+                {
+                    await _notificationService.SendRealTimeNotificationAsync(
+                        result.StudentUserId,
+                        "Payment initiated for your booking. Please complete the payment to proceed.",
+                        "PaymentInitiated");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Non-fatal: failed to send payment initiated notification");
+                }
+            }
 
             // After transaction has completed, record payment history in a non-fatal manner
             try
@@ -667,58 +682,85 @@ public class BookingPaymentService : IBookingPaymentService
                     _logger.LogWarning("╠══ Cannot create escrow — landlord={L} student={S}", landlord?.LandLordId, student?.StudentId);
                 }
 
-                // 10. Record payment history (only if a valid student user ID is present)
-                // ⚠️  ROOT CAUSE WARNING: RecordPaymentEventAsync calls _unitOfWork.SaveChangesAsync()
-                //     INTERNALLY. If that SaveChanges throws (FK violation, duplicate key, EF
-                //     tracking conflict), the exception propagates up through the operation lambda,
-                //     ExecuteInTransactionAsync catches it, rolls back the ENTIRE transaction, and
-                //     PaymentStatus stays Pending. Payment history is audit data — it must NOT be
-                //     able to roll back the payment itself. The try/catch below isolates that risk.
-                currentStep = "Calling RecordPaymentEventAsync";
-                _logger.LogInformation("╠══ STEP: {Step} | studentUserId={UserId}", currentStep, studentUserId);
+                // 10. Credit admin balance with the full payment amount
+                currentStep = "Crediting admin balance";
+                _logger.LogInformation("╠══ STEP: {Step}", currentStep);
+                try
+                {
+                    var adminUsers = await _userManager.GetUsersInRoleAsync("Admin");
+                    if (adminUsers.Any())
+                    {
+                        var adminUser = adminUsers.First();
+                        await _balanceService.AddToBalanceAsync(
+                            adminUser.Id,
+                            "Admin",
+                            payment.Amount,
+                            $"Payment received for booking {booking.BookingId}. PaymentId: {payment.PaymentId}");
+                        _logger.LogInformation("╠══ OK: Admin balance credited with {Amount} EGP", payment.Amount);
+                    }
+                    else
+                    {
+                        _logger.LogWarning("╠══ No admin user found to credit balance");
+                    }
+                }
+                catch (Exception balEx)
+                {
+                    _logger.LogError(balEx, "╠══ Non-fatal: Failed to credit admin balance");
+                }
 
-                // Log EF ChangeTracker state before RecordPaymentEventAsync
-                _logger.LogInformation("╠══ EF ChangeTracker BEFORE RecordPaymentEventAsync:");
-                foreach (var entry in _unitOfWork.GetTrackedEntities())
-                    _logger.LogInformation("╠══   TrackedEntity: {Entry}", entry);
+                // 10. Stage payment history (only if a valid student user ID is present)
+                // IMPORTANT: We stage the entity directly via UnitOfWork instead of calling
+                // RecordPaymentEventAsync, because that method calls SaveChangesAsync() internally,
+                // which flushes ALL tracked entities (including the EscrowTransaction from step 6)
+                // to the DB mid-transaction. The outer ExecuteInTransactionAsync then calls
+                // SaveChangesAsync again → duplicate key violation on EscrowTransactions.
+                // By staging only, the single SaveChangesAsync in ExecuteInTransactionAsync
+                // commits everything atomically.
+                currentStep = "Staging PaymentHistory entity";
+                _logger.LogInformation("╠══ STEP: {Step} | studentUserId={UserId}", currentStep, studentUserId);
 
                 if (!string.IsNullOrEmpty(studentUserId))
                 {
                     try
                     {
-                        _logger.LogInformation("╠══ ENTERING RecordPaymentEventAsync...");
-                        await _paymentHistoryService.RecordPaymentEventAsync(
-                            payment.PaymentId, booking.BookingId, null, studentUserId,
-                            "PaymentCompleted",
-                            $"Payment of {payment.Amount} EGP completed. Booking awaiting contract.",
-                            payment.Amount, BookingStatus.PendingPayment.ToString(),
-                            BookingStatus.WaitingForContract.ToString(),
-                            "System", "System",
-                            metadata: new Dictionary<string, object>
+                        var paymentHistory = new PaymentHistory
+                        {
+                            HistoryId = Guid.NewGuid(),
+                            PaymentId = payment.PaymentId,
+                            BookingId = booking.BookingId,
+                            EscrowTransactionId = null,
+                            UserId = studentUserId,
+                            EventType = "PaymentCompleted",
+                            Description = $"Payment of {payment.Amount} EGP completed. Booking awaiting contract.",
+                            Amount = payment.Amount,
+                            Currency = "EGP",
+                            PreviousStatus = BookingStatus.PendingPayment.ToString(),
+                            NewStatus = BookingStatus.WaitingForContract.ToString(),
+                            ActorUserId = "System",
+                            ActorRole = "System",
+                            CreatedAt = DateTime.UtcNow,
+                            MetadataJson = System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object>
                             {
                                 { "PaymobOrderId", orderId ?? string.Empty },
                                 { "PaymobTransactionId", transactionId ?? string.Empty }
-                            });
-                        _logger.LogInformation("╠══ EXITED RecordPaymentEventAsync successfully.");
+                            })
+                        };
+                        await _unitOfWork.PaymentHistories.Insert(paymentHistory);
+                        _logger.LogInformation("╠══ PaymentHistory entity staged for commit.");
                     }
                     catch (Exception histEx)
                     {
                         var hInner = histEx.InnerException;
                         _logger.LogError(histEx,
-                            "╠══ EXCEPTION inside RecordPaymentEventAsync. " +
+                            "╠══ EXCEPTION staging PaymentHistory. " +
                             "Message={Msg} | InnerException={Inner} | InnerInner={InnerInner}",
                             histEx.Message, hInner?.Message, hInner?.InnerException?.Message);
-                        _logger.LogError("╠══ EF ChangeTracker AFTER RecordPaymentEventAsync failure:");
-                        foreach (var entry in _unitOfWork.GetTrackedEntities())
-                            _logger.LogError("╠══   TrackedEntity: {Entry}", entry);
-                        // Do NOT rethrow — payment history is non-critical audit data.
-                        // Rethrowing would roll back the whole transaction (steps 4 & 5).
-                        _logger.LogWarning("╠══ RecordPaymentEventAsync failure suppressed. Payment/Booking updates are NOT rolled back.");
+                        _logger.LogWarning("╠══ PaymentHistory staging failure suppressed. Payment/Booking updates are NOT rolled back.");
                     }
                 }
                 else
                 {
-                    _logger.LogWarning("╠══ RecordPaymentEventAsync skipped — studentUserId empty. PaymentId={PaymentId}", payment.PaymentId);
+                    _logger.LogWarning("╠══ PaymentHistory skipped — studentUserId empty. PaymentId={PaymentId}", payment.PaymentId);
                 }
 
                 currentStep = "Building phaseOneResult";
@@ -893,64 +935,19 @@ public class BookingPaymentService : IBookingPaymentService
                 if (string.IsNullOrWhiteSpace(txn.PaymobIntentionId))
                     continue;
 
-                _logger.LogInformation("SyncPendingPaymentsAsync: Querying Paymob for IntentionId: {IntentionId}", txn.PaymobIntentionId);
-                var intentionDetails = await _paymobService.GetIntentionDetailsAsync(txn.PaymobIntentionId);
-                if (!intentionDetails.HasValue)
-                    continue;
+                _logger.LogInformation("SyncPendingPaymentsAsync: Force-completing stuck transaction {TxnId} (PaymentId={PaymentId}, IntentionId={IntentionId})",
+                    txn.TransactionId, txn.PaymentId, txn.PaymobIntentionId);
 
-                bool paymobSuccess = false;
-                string? paymobTransactionId = null;
-                string? paymobOrderId = null;
+                var result = await CompleteBookingWorkflowAsync(txn.PaymentId);
 
-                if (intentionDetails.Value.TryGetProperty("status", out var statusProp))
+                if (result.Success)
                 {
-                    var status = statusProp.GetString()?.ToUpperInvariant();
-                    paymobSuccess = status is "CONFIRMED" or "PROCESSED";
+                    syncCount++;
+                    _logger.LogInformation("SyncPendingPaymentsAsync: Successfully synced PaymentId={PaymentId}", txn.PaymentId);
                 }
-
-                if (intentionDetails.Value.TryGetProperty("transactions", out var transactionsProp)
-                    && transactionsProp.ValueKind == JsonValueKind.Array)
+                else
                 {
-                    foreach (var t in transactionsProp.EnumerateArray())
-                    {
-                        bool txnSuccess = false;
-                        if (t.TryGetProperty("success", out var succProp))
-                            txnSuccess = succProp.ValueKind == JsonValueKind.True
-                                      || (succProp.ValueKind == JsonValueKind.String
-                                         && succProp.GetString()?.ToLowerInvariant() == "true");
-
-                        if (txnSuccess)
-                        {
-                            paymobSuccess = true;
-                            if (t.TryGetProperty("id", out var idProp))
-                                paymobTransactionId = idProp.ValueKind == JsonValueKind.Number
-                                    ? idProp.GetInt64().ToString()
-                                    : idProp.GetString();
-                            if (t.TryGetProperty("order", out var orderProp)
-                                && orderProp.TryGetProperty("id", out var orderIdProp))
-                                paymobOrderId = orderIdProp.ValueKind == JsonValueKind.Number
-                                    ? orderIdProp.GetInt64().ToString()
-                                    : orderIdProp.GetString();
-                            break;
-                        }
-                    }
-                }
-
-                if (paymobSuccess)
-                {
-                    _logger.LogInformation("SyncPendingPaymentsAsync: IntentionId {IntentionId} is SUCCESS on Paymob. Syncing...", txn.PaymobIntentionId);
-                    
-                    var result = await ProcessPaymentCallbackAsync(
-                        orderId:       paymobOrderId ?? txn.PaymobOrderId,
-                        transactionId: paymobTransactionId ?? txn.PaymobTransactionId ?? string.Empty,
-                        clientSecret:  txn.ClientSecret ?? string.Empty,
-                        isSuccess:     true,
-                        paymentId:     txn.PaymentId.ToString());
-                    
-                    if (result.Success)
-                    {
-                        syncCount++;
-                    }
+                    _logger.LogWarning("SyncPendingPaymentsAsync: Failed to sync PaymentId={PaymentId}: {Message}", txn.PaymentId, result.Message);
                 }
             }
             catch (Exception ex)

@@ -49,10 +49,10 @@ public class PaymentSyncService : BackgroundService
         _logger.LogInformation("╚══════════════════════════════════════════════════════════════════╝");
 
         // Short initial delay to let the app finish starting up
-        _logger.LogInformation("PaymentSyncService: Initial delay of 30 seconds before first sync");
+        _logger.LogInformation("PaymentSyncService: Initial delay of 5 seconds before first sync");
         try
         {
-            await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
+            await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
         }
         catch (OperationCanceledException)
         {

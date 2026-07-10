@@ -17,6 +17,9 @@ public class BookingService : IBookingService
     private readonly ICommissionRecordRepository _commissionRecordRepository;
     private readonly IStudentRepository _studentRepository;
     private readonly ILandLordRepository _landLordRepository;
+    private readonly IBedRepository _bedRepository;
+    private readonly IRoomRepository _roomRepository;
+    private readonly IHousingUnitRepository _housingUnitRepository;
     private readonly IPricingService _pricingService;
     private readonly IBookingConflictService _bookingConflictService;
     private readonly IChatService _chatService;
@@ -28,6 +31,9 @@ public class BookingService : IBookingService
         ICommissionRecordRepository commissionRecordRepository,
         IStudentRepository studentRepository,
         ILandLordRepository landLordRepository,
+        IBedRepository bedRepository,
+        IRoomRepository roomRepository,
+        IHousingUnitRepository housingUnitRepository,
         IPricingService pricingService,
         IBookingConflictService bookingConflictService,
         IChatService chatService,
@@ -39,6 +45,9 @@ public class BookingService : IBookingService
         _commissionRecordRepository = commissionRecordRepository;
         _studentRepository = studentRepository;
         _landLordRepository = landLordRepository;
+        _bedRepository = bedRepository;
+        _roomRepository = roomRepository;
+        _housingUnitRepository = housingUnitRepository;
         _pricingService = pricingService;
         _bookingConflictService = bookingConflictService;
         _chatService = chatService;
@@ -290,9 +299,87 @@ public class BookingService : IBookingService
             throw new ArgumentException($"Exactly one of BedId, RoomId, or HousingUnitId must be provided. Got {targetCount}.");
         }
 
+        // Validate student is approved by admin
+        var student = await _studentRepository.GetAll()
+            .FirstOrDefaultAsync(s => s.StudentId == request.StudentId);
+        if (student == null)
+            throw new InvalidOperationException("Student not found.");
+
+        if (student.UniversityVerificationStatus != UniversityVerificationStatus.Approved)
+            throw new InvalidOperationException("Student account must be approved by admin before making a booking.");
+
+        // Resolve HousingUnitId and RoomId from BedId if booking a bed
+        Guid? resolvedHousingUnitId = request.HousingUnitId;
+        Guid? resolvedRoomId = request.RoomId;
+
+        if (request.BedId.HasValue)
+        {
+            var bed = await _bedRepository.GetAll()
+                .Include(b => b.Room)
+                .ThenInclude(r => r.HousingUnit)
+                .FirstOrDefaultAsync(b => b.BedId == request.BedId.Value);
+
+            if (bed == null)
+                throw new InvalidOperationException("Bed not found.");
+
+            if (bed.Room == null)
+                throw new InvalidOperationException("Bed is not associated with a room.");
+
+            resolvedRoomId = bed.RoomId;
+            resolvedHousingUnitId = bed.Room.HousingUnitId;
+
+            if (bed.Room.HousingUnit == null)
+                throw new InvalidOperationException("Room is not associated with a housing unit.");
+
+            // Validate landlord is verified
+            var landlord = await _landLordRepository.GetAsync(bed.Room.HousingUnit.LandLordId);
+            if (landlord == null || !landlord.IsVerified)
+                throw new InvalidOperationException("The landlord of this property has not been verified by admin. Booking is not allowed.");
+
+            // Validate bed is available
+            if (!bed.IsAvailable || bed.IsOccupied)
+                throw new InvalidOperationException("This bed is not available for booking.");
+        }
+        else if (request.RoomId.HasValue)
+        {
+            var room = await _roomRepository.GetAll()
+                .Include(r => r.HousingUnit)
+                .FirstOrDefaultAsync(r => r.RoomId == request.RoomId.Value);
+
+            if (room == null)
+                throw new InvalidOperationException("Room not found.");
+
+            if (room.HousingUnit == null)
+                throw new InvalidOperationException("Room is not associated with a housing unit.");
+
+            resolvedHousingUnitId = room.HousingUnitId;
+
+            // Validate landlord is verified
+            var landlord = await _landLordRepository.GetAsync(room.HousingUnit.LandLordId);
+            if (landlord == null || !landlord.IsVerified)
+                throw new InvalidOperationException("The landlord of this property has not been verified by admin. Booking is not allowed.");
+
+            // Validate room is available
+            if (!room.IsAvailable)
+                throw new InvalidOperationException("This room is not available for booking.");
+        }
+        else if (request.HousingUnitId.HasValue)
+        {
+            var unit = await _housingUnitRepository.GetAsync(request.HousingUnitId.Value);
+            if (unit == null)
+                throw new InvalidOperationException("Housing unit not found.");
+
+            // Validate landlord is verified
+            var landlord = await _landLordRepository.GetAsync(unit.LandLordId);
+            if (landlord == null || !landlord.IsVerified)
+                throw new InvalidOperationException("The landlord of this property has not been verified by admin. Booking is not allowed.");
+
+            // Validate unit is available
+            if (!unit.IsAvailable)
+                throw new InvalidOperationException("This housing unit is not available for booking.");
+        }
+
         // Infer the effective booking type from whichever ID was actually provided.
-        // The frontend may send a mismatched BookingType (e.g. Bed when only HousingUnitId is set),
-        // so we derive it from the ID instead of trusting request.BookingType.
         BookingType effectiveType =
             request.BedId.HasValue ? BookingType.Bed :
             request.RoomId.HasValue ? BookingType.Room :
@@ -333,8 +420,8 @@ public class BookingService : IBookingService
             StudentId = request.StudentId,
             BookingType = effectiveType,
             BedId = request.BedId,
-            RoomId = request.RoomId,
-            HousingUnitId = request.HousingUnitId,
+            RoomId = resolvedRoomId,
+            HousingUnitId = resolvedHousingUnitId,
             StartDate = request.StartDate,
             EndDate = request.EndDate,
             TotalPrice = totalPrice,
@@ -360,7 +447,6 @@ public class BookingService : IBookingService
         await _commissionRecordRepository.Insert(commissionRecord);
         await _commissionRecordRepository.CommitAsync();
 
-        var student = await _studentRepository.GetAsync(request.StudentId);
         if (student?.UserId != null)
         {
             try
@@ -414,6 +500,16 @@ public class BookingService : IBookingService
         if (request.BookingStatus.HasValue)
         {
             booking.BookingStatus = request.BookingStatus.Value;
+        }
+
+        // Recalculate total price if dates changed
+        if (request.StartDate.HasValue || request.EndDate.HasValue)
+        {
+            booking.TotalPrice = await _pricingService.CalculateBookingPriceAsync(
+                booking.BookingType,
+                booking.BedId ?? booking.RoomId ?? booking.HousingUnitId!.Value,
+                booking.StartDate,
+                booking.EndDate);
         }
 
         booking.UpdatedAt = DateTime.UtcNow;

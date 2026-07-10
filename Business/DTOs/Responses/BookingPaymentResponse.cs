@@ -10,4 +10,5 @@ public class BookingPaymentResponse
     public Guid? EscrowId { get; set; }
     public string? PaymentUrl { get; set; }
     public string? ContractPdfUrl { get; set; }
+    public string? StudentUserId { get; set; }
 }
