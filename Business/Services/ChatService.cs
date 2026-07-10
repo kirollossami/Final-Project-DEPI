@@ -1,6 +1,7 @@
 using Business.DTOs.Responses;
 using Business.Interfaces;
 using Domain.Entities;
+using Domain.Enums;
 using Infrastructure.Repositories;
 using Infrastructure.Repositories.Base;
 using Microsoft.AspNetCore.Identity;
@@ -15,19 +16,22 @@ public class ChatService : IChatService
     private readonly IBookingRepository _bookingRepository;
     private readonly IHousingUnitRepository _housingUnitRepository;
     private readonly UserManager<User> _userManager;
+    private readonly INotificationService _notificationService;
 
     public ChatService(
         IBaseRepository<Conversation> conversationRepository,
         IBaseRepository<Message> messageRepository,
         IBookingRepository bookingRepository,
         IHousingUnitRepository housingUnitRepository,
-        UserManager<User> userManager)
+        UserManager<User> userManager,
+        INotificationService notificationService)
     {
         _conversationRepository = conversationRepository;
         _messageRepository = messageRepository;
         _bookingRepository = bookingRepository;
         _housingUnitRepository = housingUnitRepository;
         _userManager = userManager;
+        _notificationService = notificationService;
     }
 
     public async Task<ConversationResponse> GetOrCreateConversationAsync(Guid bookingId, string userId)
@@ -199,6 +203,26 @@ public class ChatService : IChatService
         }
 
         await _messageRepository.CommitAsync();
+
+        try
+        {
+            var convo = await _conversationRepository.GetAsync(conversationId);
+            if (convo != null)
+            {
+                var recipientId = convo.StudentUserId == senderId
+                    ? convo.LandLordUserId
+                    : convo.StudentUserId;
+
+                var sender = await _userManager.FindByIdAsync(senderId);
+                var senderName = sender?.UserName ?? sender?.Email ?? "Someone";
+
+                await _notificationService.SendRealTimeNotificationAsync(
+                    recipientId,
+                    $"You have a new message from {senderName}.",
+                    NotificationTypes.NewMessageReceived);
+            }
+        }
+        catch { }
 
         return new MessageResponse
         {

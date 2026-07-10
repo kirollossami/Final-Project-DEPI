@@ -492,6 +492,8 @@ public class BookingPaymentService : IBookingPaymentService
                 else
                     _logger.LogInformation("╠══ OK: Student. Id={StudentId} UserId={UserId}", student.StudentId, student.UserId);
 
+                string studentUserId = student?.UserId ?? string.Empty;
+
                 // ── FAILURE ──────────────────────────────────────────────────
                 if (!isSuccess)
                 {
@@ -504,6 +506,18 @@ public class BookingPaymentService : IBookingPaymentService
                     booking.UpdatedAt = DateTime.UtcNow;
                     await _unitOfWork.Bookings.Update(booking);
                     phaseOneResult = new BookingPaymentResponse { Success = false, Message = "Payment failed", PaymentId = payment.PaymentId };
+
+                    if (student?.UserId != null)
+                    {
+                        try
+                        {
+                            await _notificationService.SendRealTimeNotificationAsync(student.UserId,
+                                "Your payment has failed. Please try again.",
+                                NotificationTypes.PaymentFailed);
+                        }
+                        catch { }
+                    }
+
                     return;
                 }
 
@@ -534,7 +548,6 @@ public class BookingPaymentService : IBookingPaymentService
 
                 string studentName   = studentUser?.Email ?? studentUser?.UserName
                     ?? student?.User?.Email ?? student?.User?.UserName ?? "Unknown";
-                string studentUserId = student?.UserId ?? string.Empty;
 
                 _logger.LogInformation("╠══ OK: Student identity. UserId={UserId} Name={Name}", studentUserId, studentName);
 
@@ -778,9 +791,42 @@ public class BookingPaymentService : IBookingPaymentService
         // ── Phase 3: post-commit notifications (non-fatal) ──────────────────────
         try
         {
-            await NotifySafe(phaseOneResult.BookingId.ToString(),
-                "Payment completed! Your booking is confirmed. The admin will upload the contract shortly.",
-                "PaymentCompleted");
+            var bookingForNotify = await _unitOfWork.Bookings.GetAsync(phaseOneResult.BookingId);
+            if (bookingForNotify != null)
+            {
+                var studentForNotify = await _unitOfWork.Students.GetAsync(bookingForNotify.StudentId);
+                if (!string.IsNullOrEmpty(studentForNotify?.UserId))
+                {
+                    await NotifySafe(studentForNotify.UserId,
+                        "Payment completed! Your booking is confirmed. The admin will upload the contract shortly.",
+                        NotificationTypes.PaymentCompleted);
+                }
+
+                LandLord? landlordForNotify = null;
+                if (bookingForNotify.RoomId.HasValue)
+                {
+                    var roomForNotify = await _unitOfWork.Rooms.GetAsync(bookingForNotify.RoomId.Value);
+                    if (roomForNotify != null)
+                    {
+                        var unitForNotify = await _unitOfWork.HousingUnits.GetAsync(roomForNotify.HousingUnitId);
+                        if (unitForNotify != null)
+                            landlordForNotify = await _unitOfWork.LandLords.GetAsync(unitForNotify.LandLordId);
+                    }
+                }
+                else if (bookingForNotify.HousingUnitId.HasValue)
+                {
+                    var unitForNotify = await _unitOfWork.HousingUnits.GetAsync(bookingForNotify.HousingUnitId.Value);
+                    if (unitForNotify != null)
+                        landlordForNotify = await _unitOfWork.LandLords.GetAsync(unitForNotify.LandLordId);
+                }
+
+                if (landlordForNotify != null && !string.IsNullOrEmpty(landlordForNotify.UserId))
+                {
+                    await NotifySafe(landlordForNotify.UserId,
+                        "A payment has been completed for a booking on your property. Awaiting contract upload.",
+                        NotificationTypes.PaymentCompleted);
+                }
+            }
         }
         catch { /* non-fatal */ }
 

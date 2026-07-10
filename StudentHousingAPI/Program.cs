@@ -235,6 +235,7 @@ builder.Services.AddScoped<IWishlistService, WishlistService>();
 builder.Services.AddScoped<IComplaintService, ComplaintService>();
 builder.Services.AddScoped<IPaymentService, PaymentService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
+builder.Services.AddScoped<INotificationDispatcher, StudentHousingAPI.Services.SignalRNotificationDispatcher>();
 builder.Services.AddScoped<IPricingService, PricingService>();
 builder.Services.AddScoped<IBookingConflictService, BookingConflictService>();
 builder.Services.AddSingleton<ITokenBlacklistService, TokenBlacklistService>();
@@ -559,6 +560,7 @@ app.UseAuthorization();
 
 app.MapControllers();
 app.MapHub<StudentHousingAPI.Hubs.ChatHub>("/chatHub");
+app.MapHub<StudentHousingAPI.Hubs.NotificationHub>("/notificationHub");
 
     WriteStartupLog("=== APPLICATION BUILT SUCCESSFULLY — calling app.Run() ===");
 

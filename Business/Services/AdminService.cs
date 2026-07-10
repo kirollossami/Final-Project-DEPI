@@ -17,19 +17,22 @@ public class AdminService : IAdminService
     private readonly ILandLordRepository _landLordRepository;
     private readonly IBookingRepository _bookingRepository;
     private readonly ICommissionRecordRepository _commissionRecordRepository;
+    private readonly INotificationService _notificationService;
 
     public AdminService(
         UserManager<User> userManager,
         IStudentRepository studentRepository,
         ILandLordRepository landLordRepository,
         IBookingRepository bookingRepository,
-        ICommissionRecordRepository commissionRecordRepository)
+        ICommissionRecordRepository commissionRecordRepository,
+        INotificationService notificationService)
     {
         _userManager = userManager;
         _studentRepository = studentRepository;
         _landLordRepository = landLordRepository;
         _bookingRepository = bookingRepository;
         _commissionRecordRepository = commissionRecordRepository;
+        _notificationService = notificationService;
     }
 
     public async Task<AdminUserIndexedResponse> GetAllUsersAsync(AdminUserFilterRequest filter)
@@ -152,6 +155,17 @@ public class AdminService : IAdminService
         user.IsActive = !user.IsActive;
         await _userManager.UpdateAsync(user);
 
+        try
+        {
+            await _notificationService.SendRealTimeNotificationAsync(
+                userId,
+                user.IsActive
+                    ? "Your account has been activated by the admin."
+                    : "Your account has been deactivated by the admin.",
+                user.IsActive ? NotificationTypes.AccountActivated : NotificationTypes.AccountDeactivated);
+        }
+        catch { }
+
         return new ApiResponse<string>
         {
             Success = true,
@@ -215,6 +229,18 @@ public class AdminService : IAdminService
         student.UniversityVerificationStatus = newStatus;
         await _studentRepository.Update(student);
         await _studentRepository.CommitAsync();
+
+        try
+        {
+            var statusMessage = newStatus == UniversityVerificationStatus.Approved
+                ? "Your university verification has been approved."
+                : "Your university verification has been rejected.";
+            var notifType = newStatus == UniversityVerificationStatus.Approved
+                ? NotificationTypes.UniversityVerificationApproved
+                : NotificationTypes.UniversityVerificationRejected;
+            await _notificationService.SendRealTimeNotificationAsync(student.UserId, statusMessage, notifType);
+        }
+        catch { }
 
         return new StudentResponse
         {
@@ -302,6 +328,22 @@ public class AdminService : IAdminService
         landlord.UpdatedAt = DateTime.UtcNow;
         await _landLordRepository.Update(landlord);
         await _landLordRepository.CommitAsync();
+
+        try
+        {
+            var statusMessage = status == "Approved"
+                ? "Your landlord account has been verified and approved."
+                : status == "Rejected"
+                    ? "Your landlord verification has been rejected. Please update your documents and resubmit."
+                    : "Your landlord verification status has been updated to Pending.";
+            var notifType = status == "Approved"
+                ? NotificationTypes.LandlordVerificationApproved
+                : status == "Rejected"
+                    ? NotificationTypes.LandlordVerificationRejected
+                    : NotificationTypes.PendingApproval;
+            await _notificationService.SendRealTimeNotificationAsync(landlord.UserId, statusMessage, notifType);
+        }
+        catch { }
 
         return new ApiResponse<string>
         {

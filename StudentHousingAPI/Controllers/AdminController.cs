@@ -61,6 +61,7 @@ public class AdminController : BaseController
         var result = await _adminService.ToggleUserActiveStatusAsync(userId);
         if (!result.Success)
             return BadRequest(result);
+        try { await _notificationService.SendRealTimeNotificationAsync(userId, "Your account status has been updated by admin.", NotificationTypes.AccountStatusChanged); } catch { }
         return Ok(result);
     }
 
@@ -81,6 +82,13 @@ public class AdminController : BaseController
         var result = await _adminService.ReviewUniversityVerificationAsync(studentId, request.NewStatus);
         if (result == null)
             return BadRequest(new { Message = "Verification can only be reviewed when status is Pending, and status can only be set to Approved or Rejected." });
+        try
+        {
+            var student = await _studentService.GetStudentByIdAsync(studentId);
+            if (student?.UserId != null)
+                await _notificationService.SendRealTimeNotificationAsync(student.UserId, $"Your university verification has been {request.NewStatus}.", NotificationTypes.VerificationReviewed);
+        }
+        catch { }
         return Ok(result);
     }
 
@@ -118,6 +126,17 @@ public class AdminController : BaseController
         var result = await _complaintService.UpdateComplaintAsync(request);
         if (result == null)
             return NotFound(new { Message = "Complaint not found." });
+        try
+        {
+            var complaint = await _complaintService.GetComplaintByIdAsync(complaintId);
+            if (complaint?.StudentId != null)
+            {
+                var student = await _studentService.GetStudentByIdAsync(complaint.StudentId);
+                if (student?.UserId != null)
+                    await _notificationService.SendRealTimeNotificationAsync(student.UserId, $"Your complaint status has been updated to {request.Status}.", NotificationTypes.ComplaintStatusUpdated);
+            }
+        }
+        catch { }
         return Ok(result);
     }
 
@@ -138,6 +157,13 @@ public class AdminController : BaseController
         var result = await _adminService.UpdateLandlordVerificationStatusAsync(landlordId, request.Status);
         if (!result.Success)
             return BadRequest(result);
+        try
+        {
+            var landlord = await _landLordService.GetLandLordByIdAsync(landlordId);
+            if (landlord?.UserId != null)
+                await _notificationService.SendRealTimeNotificationAsync(landlord.UserId, $"Your account verification status has been updated to {request.Status}.", NotificationTypes.VerificationStatusChanged);
+        }
+        catch { }
         return Ok(result);
     }
 
@@ -297,12 +323,12 @@ public class AdminController : BaseController
                 await _notificationService.SendRealTimeNotificationAsync(
                     student?.UserId ?? string.Empty,
                     "Contract has been uploaded for your booking. Please review and sign the contract.",
-                    "ContractUploaded");
+                    NotificationTypes.ContractUploaded);
 
                 await _notificationService.SendRealTimeNotificationAsync(
                     landlord?.UserId ?? string.Empty,
                     "Contract has been uploaded for your booking. Please review and sign the contract.",
-                    "ContractUploaded");
+                    NotificationTypes.ContractUploaded);
             }
             catch (Exception ex)
             {
@@ -366,6 +392,17 @@ public class AdminController : BaseController
 
             if (!result.Success)
                 return BadRequest(new { Message = $"Force-complete failed: {result.Message}" });
+
+            try
+            {
+                var student = await _unitOfWork.Students.GetAsync(booking.StudentId);
+                if (student?.UserId != null)
+                    await _notificationService.SendRealTimeNotificationAsync(student.UserId, "Your payment has been completed successfully.", NotificationTypes.PaymentCompleted);
+                var landlord = GetOwnerFromBooking(booking);
+                if (landlord?.UserId != null)
+                    await _notificationService.SendRealTimeNotificationAsync(landlord.UserId, "Payment has been completed for your property.", NotificationTypes.PaymentCompleted);
+            }
+            catch { }
 
             return Ok(new
             {
@@ -462,12 +499,12 @@ public class AdminController : BaseController
                 await _notificationService.SendRealTimeNotificationAsync(
                     student?.UserId ?? string.Empty,
                     "Your booking has been approved. The landlord has received the payment.",
-                    "BookingApproved");
+                    NotificationTypes.BookingApproved);
 
                 await _notificationService.SendRealTimeNotificationAsync(
                     landlord?.UserId ?? string.Empty,
                     "Booking has been approved. Payment has been released to your account.",
-                    "BookingApproved");
+                    NotificationTypes.BookingApproved);
             }
             catch (Exception ex)
             {
@@ -568,12 +605,12 @@ public class AdminController : BaseController
                 await _notificationService.SendRealTimeNotificationAsync(
                     student?.UserId ?? string.Empty,
                     $"Your booking has been rejected. Reason: {reason}. Your payment has been refunded.",
-                    "BookingRejected");
+                    NotificationTypes.BookingRejected);
 
                 await _notificationService.SendRealTimeNotificationAsync(
                     landlord?.UserId ?? string.Empty,
                     $"Booking has been rejected. Reason: {reason}.",
-                    "BookingRejected");
+                    NotificationTypes.BookingRejected);
             }
             catch (Exception ex)
             {

@@ -17,6 +17,7 @@ public class ContractService : IContractService
     private readonly IUnitOfWork _unitOfWork;
     private readonly IFileStorageService _fileStorageService;
     private readonly IEscrowService _escrowService;
+    private readonly INotificationService _notificationService;
     private readonly ILogger<ContractService> _logger;
     private const decimal PlatformFeePercentage = 5.0m; // 5% platform fee
 
@@ -24,11 +25,13 @@ public class ContractService : IContractService
         IUnitOfWork unitOfWork,
         IFileStorageService fileStorageService,
         IEscrowService escrowService,
+        INotificationService notificationService,
         ILogger<ContractService> logger)
     {
         _unitOfWork = unitOfWork;
         _fileStorageService = fileStorageService;
         _escrowService = escrowService;
+        _notificationService = notificationService;
         _logger = logger;
     }
 
@@ -97,6 +100,26 @@ public class ContractService : IContractService
 
             _logger.LogInformation("Contract {Number} uploaded for booking {BookingId}, status updated to WaitingForSignatures",
                 contract.ContractNumber, bookingId);
+
+            try
+            {
+                var student = await _unitOfWork.Students.GetAsync(booking.StudentId);
+                if (!string.IsNullOrEmpty(student?.UserId))
+                    await _notificationService.SendRealTimeNotificationAsync(student.UserId,
+                        "A contract has been uploaded for your booking. Please review and sign it.",
+                        NotificationTypes.ContractReady);
+            }
+            catch { }
+
+            try
+            {
+                var owner = await ResolveOwnerAsync(booking);
+                if (!string.IsNullOrEmpty(owner?.UserId))
+                    await _notificationService.SendRealTimeNotificationAsync(owner.UserId,
+                        "A new booking contract is ready for your signature. Please review and sign.",
+                        NotificationTypes.ContractReady);
+            }
+            catch { }
 
             return MapToResponse(contract);
         }
@@ -181,6 +204,44 @@ public class ContractService : IContractService
             await _unitOfWork.SaveChangesAsync();
 
             _logger.LogInformation("Contract {Number} signed by {Role}", contract.ContractNumber, request.Role);
+
+            try
+            {
+                if (request.Role.Equals("Student", StringComparison.OrdinalIgnoreCase))
+                {
+                    var owner = await ResolveOwnerAsync(booking!);
+                    if (contract.IsLandlordSigned)
+                    {
+                        await _notificationService.SendNotificationToRoleAsync("Admin",
+                            $"Both parties have signed contract {contract.ContractNumber}. Please review and approve.",
+                            NotificationTypes.ContractSigned);
+                    }
+                    else if (!string.IsNullOrEmpty(owner?.UserId))
+                    {
+                        await _notificationService.SendRealTimeNotificationAsync(owner.UserId,
+                            "The student has signed the contract. Please review and sign.",
+                            NotificationTypes.StudentSigned);
+                    }
+                }
+                else
+                {
+                    var student = await _unitOfWork.Students.GetAsync(booking!.StudentId);
+                    if (contract.IsStudentSigned)
+                    {
+                        await _notificationService.SendNotificationToRoleAsync("Admin",
+                            $"Both parties have signed contract {contract.ContractNumber}. Please review and approve.",
+                            NotificationTypes.ContractSigned);
+                    }
+                    else if (!string.IsNullOrEmpty(student?.UserId))
+                    {
+                        await _notificationService.SendRealTimeNotificationAsync(student.UserId,
+                            "The landlord has signed the contract. Please review and sign.",
+                            NotificationTypes.LandlordSigned);
+                    }
+                }
+            }
+            catch { }
+
             return MapToResponse(contract);
         }
         catch (Exception ex)
@@ -247,4 +308,27 @@ public class ContractService : IContractService
         ContractStatus = contract.ContractStatus,
         CreatedAt = contract.CreatedAt
     };
+
+    private async Task<LandLord?> ResolveOwnerAsync(Booking booking)
+    {
+        if (booking.BedId.HasValue)
+        {
+            var bed = await _unitOfWork.Beds.GetAsync(booking.BedId.Value);
+            if (bed?.Room?.HousingUnit?.LandLordId is Guid lid1)
+                return await _unitOfWork.LandLords.GetAsync(lid1);
+        }
+        if (booking.RoomId.HasValue)
+        {
+            var room = await _unitOfWork.Rooms.GetAsync(booking.RoomId.Value);
+            if (room?.HousingUnit?.LandLordId is Guid lid2)
+                return await _unitOfWork.LandLords.GetAsync(lid2);
+        }
+        if (booking.HousingUnitId.HasValue)
+        {
+            var hu = await _unitOfWork.HousingUnits.GetAsync(booking.HousingUnitId.Value);
+            if (hu?.LandLordId is Guid lid3)
+                return await _unitOfWork.LandLords.GetAsync(lid3);
+        }
+        return null;
+    }
 }

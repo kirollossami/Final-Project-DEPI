@@ -64,6 +64,18 @@ public class BookingController : BaseController
             {
                 return BadRequest("Invalid booking request or booking conflict");
             }
+            try { await _notificationService.SendRealTimeNotificationAsync(request.StudentId.ToString(), "Your booking has been created successfully.", NotificationTypes.BookingCreated); } catch { }
+            try
+            {
+                var unit = await _unitOfWork.HousingUnits.GetAsync(request.HousingUnitId ?? Guid.Empty);
+                if (unit != null)
+                {
+                    var landlord = await _unitOfWork.LandLords.GetAsync(unit.LandLordId);
+                    if (landlord?.UserId != null)
+                        await _notificationService.SendRealTimeNotificationAsync(landlord.UserId, "A new booking has been made for your property.", NotificationTypes.NewBooking);
+                }
+            }
+            catch { }
             return CreatedAtAction(nameof(GetBookingById), new { bookingId = booking.BookingId }, booking);
         }
         catch (Exception ex)
@@ -91,6 +103,17 @@ public class BookingController : BaseController
         {
             return NotFound();
         }
+        try
+        {
+            var booking = await _unitOfWork.Bookings.GetAsync(bookingId);
+            if (booking != null)
+            {
+                var student = await _unitOfWork.Students.GetAsync(booking.StudentId);
+                if (student?.UserId != null)
+                    await _notificationService.SendRealTimeNotificationAsync(student.UserId, "Your booking has been cancelled.", NotificationTypes.BookingCancelled);
+            }
+        }
+        catch { }
         return NoContent();
     }
 
@@ -98,6 +121,10 @@ public class BookingController : BaseController
     public async Task<ActionResult<List<BookingResponse?>>> CreateMultiRoomBooking([FromBody] MultiRoomBookingCreateRequest request)
     {
         var result = await _bookingService.CreateMultiRoomBookingAsync(request);
+        if (result != null && result.Any())
+        {
+            try { await _notificationService.SendRealTimeNotificationAsync(request.StudentId.ToString(), "Your multi-room booking has been created.", NotificationTypes.MultiRoomBookingCreated); } catch { }
+        }
         return Ok(result);
     }
 
@@ -432,14 +459,14 @@ public class BookingController : BaseController
                     await _notificationService.SendNotificationToRoleAsync(
                         "Admin",
                         $"Both parties have signed contract for booking {bookingId}. Please review and approve.",
-                        "ContractSigned");
+                        NotificationTypes.ContractSigned);
                 }
                 else
                 {
                     await _notificationService.SendRealTimeNotificationAsync(
                         landlord?.UserId ?? string.Empty,
                         "Student has signed the contract. Please review and sign.",
-                        "StudentSigned");
+                        NotificationTypes.StudentSigned);
                 }
             }
             catch (Exception ex)
@@ -557,14 +584,14 @@ public class BookingController : BaseController
                     await _notificationService.SendNotificationToRoleAsync(
                         "Admin",
                         $"Both parties have signed contract for booking {bookingId}. Please review and approve.",
-                        "ContractSigned");
+                        NotificationTypes.ContractSigned);
                 }
                 else
                 {
                     await _notificationService.SendRealTimeNotificationAsync(
                         student?.UserId ?? string.Empty,
                         "Landlord has signed the contract. Please review and sign.",
-                        "LandlordSigned");
+                        NotificationTypes.LandlordSigned);
                 }
             }
             catch (Exception ex)
