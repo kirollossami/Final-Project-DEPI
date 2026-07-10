@@ -228,12 +228,24 @@ public class ComplaintController : BaseController
     {
         try
         {
+            var existing = await _complaintService.GetComplaintByIdAsync(complaintId);
             var result = await _complaintService.DeleteComplaintAsync(complaintId);
 
             if (!result)
             {
                 return NotFound(new { Message = "Complaint not found" });
             }
+
+            try
+            {
+                if (existing?.StudentId != null)
+                {
+                    var student = await _unitOfWork.Students.GetAsync(existing.StudentId);
+                    if (student?.UserId != null)
+                        await _notificationService.SendRealTimeNotificationAsync(student.UserId, "Your complaint has been removed by admin.", NotificationTypes.ComplaintDeleted);
+                }
+            }
+            catch { }
 
             _logger.LogInformation($"Complaint {complaintId} deleted by admin");
 
@@ -342,7 +354,7 @@ public class ComplaintController : BaseController
             await _notificationService.SendRealTimeNotificationAsync(
                 landlord.UserId,
                 $"A new complaint has been filed for your property. Complaint ID: {complaintId}",
-                "NewComplaintFiled"
+                NotificationTypes.NewComplaintFiled
             );
         }
         catch (Exception ex)
@@ -369,7 +381,7 @@ public class ComplaintController : BaseController
             await _notificationService.SendRealTimeNotificationAsync(
                 student.UserId,
                 $"Complaint {complaintId} status updated: {statusMessage}",
-                "ComplaintStatusUpdated"
+                NotificationTypes.ComplaintStatusUpdated
             );
         }
         catch (Exception ex)

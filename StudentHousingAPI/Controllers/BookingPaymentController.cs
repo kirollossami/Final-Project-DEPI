@@ -20,17 +20,20 @@ public class BookingPaymentController : BaseController
     private readonly IPaymobService _paymobService;
     private readonly ILogger<BookingPaymentController> _logger;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly INotificationService _notificationService;
 
     public BookingPaymentController(
         IBookingPaymentService bookingPaymentService,
         IPaymobService paymobService,
         ILogger<BookingPaymentController> logger,
-        IUnitOfWork unitOfWork)
+        IUnitOfWork unitOfWork,
+        INotificationService notificationService)
     {
         _bookingPaymentService = bookingPaymentService;
         _paymobService = paymobService;
         _logger = logger;
         _unitOfWork = unitOfWork;
+        _notificationService = notificationService;
     }
 
     [HttpPost("initiate")]
@@ -392,6 +395,22 @@ public class BookingPaymentController : BaseController
         if (!result.Success)
             return BadRequest(new { Message = result.Message });
         
+        try
+        {
+            var payment = await _unitOfWork.Payments.GetAsync(paymentId);
+            if (payment != null)
+            {
+                var booking = await _unitOfWork.Bookings.GetAsync(payment.BookingId);
+                if (booking != null)
+                {
+                    var student = await _unitOfWork.Students.GetAsync(booking.StudentId);
+                    if (student?.UserId != null)
+                        await _notificationService.SendRealTimeNotificationAsync(student.UserId, "Your payment workflow has been completed.", NotificationTypes.PaymentWorkflowCompleted);
+                }
+            }
+        }
+        catch { }
+        
         return Ok(result);
     }
 
@@ -411,6 +430,22 @@ public class BookingPaymentController : BaseController
             _logger.LogError($"Manual contract generation failed for payment {paymentId}: {result.Message}");
             return BadRequest(new { Message = result.Message });
         }
+
+        try
+        {
+            var payment = await _unitOfWork.Payments.GetAsync(paymentId);
+            if (payment != null)
+            {
+                var booking = await _unitOfWork.Bookings.GetAsync(payment.BookingId);
+                if (booking != null)
+                {
+                    var student = await _unitOfWork.Students.GetAsync(booking.StudentId);
+                    if (student?.UserId != null)
+                        await _notificationService.SendRealTimeNotificationAsync(student.UserId, "Your contract has been generated.", NotificationTypes.ContractGenerated);
+                }
+            }
+        }
+        catch { }
         
         _logger.LogInformation($"Manual contract generation succeeded for payment {paymentId}. ContractId: {result.ContractId}");
         return Ok(result);
@@ -473,6 +508,14 @@ public class BookingPaymentController : BaseController
             var newContract = await _unitOfWork.Contracts.GetByBookingIdAsync(payment.BookingId);
             if (newContract != null)
             {
+                try
+                {
+                    var student = await _unitOfWork.Students.GetAsync(booking.StudentId);
+                    if (student?.UserId != null)
+                        await _notificationService.SendRealTimeNotificationAsync(student.UserId, "Your contract has been generated.", NotificationTypes.ContractGenerated);
+                }
+                catch { }
+
                 _logger.LogInformation($"Contract generation retry succeeded for payment {paymentId}. ContractId: {newContract.ContractId}");
                 return Ok(new { 
                     Message = "Contract generated successfully", 

@@ -261,6 +261,8 @@ public class ReviewController : BaseController
                 return BadRequest(new { Message = "Failed to update review" });
             }
 
+            await SendReviewNotificationToLandlord(review.ReviewId, review.HousingUnitId, review.Rating);
+
             _logger.LogInformation($"Review {reviewId} updated by student {studentId}");
 
             return Ok(new
@@ -307,6 +309,18 @@ public class ReviewController : BaseController
             {
                 return BadRequest(new { Message = "Failed to delete review" });
             }
+
+            try
+            {
+                var unit = await _unitOfWork.HousingUnits.GetAsync(existingReview.HousingUnitId);
+                if (unit != null)
+                {
+                    var landlord = await _unitOfWork.LandLords.GetAsync(unit.LandLordId);
+                    if (landlord?.UserId != null)
+                        await _notificationService.SendRealTimeNotificationAsync(landlord.UserId, "A review has been deleted from your property.", NotificationTypes.ReviewDeleted);
+                }
+            }
+            catch { }
 
             _logger.LogInformation($"Review {reviewId} deleted by student {studentId}");
 
@@ -375,7 +389,7 @@ public class ReviewController : BaseController
             await _notificationService.SendRealTimeNotificationAsync(
                 landlord.UserId,
                 $"Your property has received a new review ({ratingText}). Review ID: {reviewId}",
-                "NewReviewReceived"
+                NotificationTypes.NewReviewReceived
             );
         }
         catch (Exception ex)

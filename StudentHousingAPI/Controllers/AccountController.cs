@@ -1,6 +1,7 @@
 using Business.DTOs.Requests;
 using Business.DTOs.Responses;
 using Business.Interfaces;
+using Domain.Enums;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.Google;
@@ -15,11 +16,13 @@ public class AccountController : Controller
 {
     private readonly IAuthService authService;
     private readonly IConfiguration _configuration;
+    private readonly INotificationService _notificationService;
 
-    public AccountController(IAuthService authService, IConfiguration configuration)
+    public AccountController(IAuthService authService, IConfiguration configuration, INotificationService notificationService)
     {
         this.authService = authService;
         _configuration = configuration;
+        _notificationService = notificationService;
     }
 
     [HttpPost("login")]
@@ -178,6 +181,7 @@ public class AccountController : Controller
         if (!response.Success)
             return BadRequest(response);
 
+        try { await _notificationService.SendNotificationToRoleAsync("Admin", $"A new student has registered: {request.Email}", NotificationTypes.NewRegistration); } catch { }
         return Ok(response);
     }
 
@@ -190,6 +194,7 @@ public class AccountController : Controller
         if (!response.Success)
             return BadRequest(response);
 
+        try { await _notificationService.SendNotificationToRoleAsync("Admin", $"A new landlord has registered: {request.Email}", NotificationTypes.NewRegistration); } catch { }
         return Ok(response);
     }
 

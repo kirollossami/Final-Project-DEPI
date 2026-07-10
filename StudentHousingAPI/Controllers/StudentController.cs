@@ -14,13 +14,16 @@ public class StudentController : BaseController
 {
     private readonly IStudentService studentService;
     private readonly IBookingService bookingService;
+    private readonly INotificationService _notificationService;
 
     public StudentController(
         IStudentService studentService,
-        IBookingService bookingService)
+        IBookingService bookingService,
+        INotificationService notificationService)
     {
         this.studentService = studentService;
         this.bookingService = bookingService;
+        _notificationService = notificationService;
     }
 
     #region manipulation
@@ -38,7 +41,7 @@ public class StudentController : BaseController
     public async Task<IActionResult> UpdateStudent(StudentUpdateRequest request)
     {
         var student = await studentService.UpdateStudentAsync(request);
-
+        try { await _notificationService.SendRealTimeNotificationAsync(GetLoggedId(), "Your profile has been updated.", NotificationTypes.ProfileUpdated); } catch { }
         return Ok(student);
     }
 
@@ -47,7 +50,7 @@ public class StudentController : BaseController
     public async Task<IActionResult> ChangePassword(ChangePasswordRequest request)
     {
         await studentService.ChangePasswordAsync(request);
-
+        try { await _notificationService.SendRealTimeNotificationAsync(GetLoggedId(), "Your password has been changed.", NotificationTypes.PasswordChanged); } catch { }
         return Ok();
     }
 
@@ -97,7 +100,13 @@ public class StudentController : BaseController
     public async Task<IActionResult> DeactivateStudent(Guid studentId)
     {
         var student = await studentService.DeactivateStudentAsync(studentId);
-
+        try
+        {
+            var studentData = await studentService.GetStudentByIdAsync(studentId);
+            if (studentData?.UserId != null)
+                await _notificationService.SendRealTimeNotificationAsync(studentData.UserId, "Your account has been deactivated by admin.", NotificationTypes.AccountDeactivated);
+        }
+        catch { }
         return Ok(student);
     }
 
@@ -106,7 +115,13 @@ public class StudentController : BaseController
     public async Task<IActionResult> ReactivateStudent(Guid studentId)
     {
         var student = await studentService.ReactivateStudentAsync(studentId);
-
+        try
+        {
+            var studentData = await studentService.GetStudentByIdAsync(studentId);
+            if (studentData?.UserId != null)
+                await _notificationService.SendRealTimeNotificationAsync(studentData.UserId, "Your account has been reactivated by admin.", NotificationTypes.AccountReactivated);
+        }
+        catch { }
         return Ok(student);
     }
 
@@ -136,6 +151,7 @@ public class StudentController : BaseController
         if (result == null)
             return BadRequest(new { Message = "Invalid file type. Only JPEG and PNG files are allowed, max 5MB." });
 
+        try { await _notificationService.SendNotificationToRoleAsync("Admin", "A student has submitted their university verification.", NotificationTypes.UniversityVerificationSubmitted); } catch { }
         return Ok(result);
     }
 
@@ -155,6 +171,10 @@ public class StudentController : BaseController
     public async Task<IActionResult> CreateMultiRoomBooking([FromBody] MultiRoomBookingCreateRequest request)
     {
         var result = await bookingService.CreateMultiRoomBookingAsync(request);
+        if (result != null && result.Any())
+        {
+            try { await _notificationService.SendRealTimeNotificationAsync(GetLoggedId(), "Your multi-room booking has been created.", NotificationTypes.MultiRoomBookingCreated); } catch { }
+        }
         return Ok(result);
     }
 }

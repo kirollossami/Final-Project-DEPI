@@ -3,6 +3,7 @@ using Business.DTOs.Responses;
 using Business.Interfaces;
 using Domain.Entities;
 using Infrastructure.Repositories;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 
 namespace Business.Services;
@@ -10,10 +11,17 @@ namespace Business.Services;
 public class NotificationService : INotificationService
 {
     private readonly INotificationRepository _notificationRepository;
+    private readonly INotificationDispatcher _dispatcher;
+    private readonly UserManager<User> _userManager;
 
-    public NotificationService(INotificationRepository notificationRepository)
+    public NotificationService(
+        INotificationRepository notificationRepository,
+        INotificationDispatcher dispatcher,
+        UserManager<User> userManager)
     {
         _notificationRepository = notificationRepository;
+        _dispatcher = dispatcher;
+        _userManager = userManager;
     }
 
     public async Task<NotificationResponse?> GetNotificationByIdAsync(Guid notificationId)
@@ -37,19 +45,13 @@ public class NotificationService : INotificationService
         var query = _notificationRepository.GetAll().AsQueryable();
 
         if (filter.UserId != null)
-        {
             query = query.Where(n => n.UserId == filter.UserId);
-        }
 
         if (filter.IsSeen.HasValue)
-        {
             query = query.Where(n => n.IsSeen == filter.IsSeen.Value);
-        }
 
         if (!string.IsNullOrEmpty(filter.Type))
-        {
             query = query.Where(n => n.Type == filter.Type);
-        }
 
         var totalCount = await query.CountAsync();
         var notifications = await query
@@ -89,7 +91,7 @@ public class NotificationService : INotificationService
         await _notificationRepository.Insert(notification);
         await _notificationRepository.CommitAsync();
 
-        return new NotificationResponse
+        var response = new NotificationResponse
         {
             NotificationId = notification.NotificationId,
             UserId = notification.UserId,
@@ -98,6 +100,10 @@ public class NotificationService : INotificationService
             IsSeen = notification.IsSeen,
             CreatedAt = notification.CreatedAt
         };
+
+        await _dispatcher.DispatchToUserAsync(request.UserId, response);
+
+        return response;
     }
 
     public async Task<bool> MarkAsReadAsync(Guid notificationId)
@@ -114,7 +120,6 @@ public class NotificationService : INotificationService
 
     public async Task SendRealTimeNotificationAsync(string userId, string message, string type)
     {
-        // Save to database
         var notification = new Domain.Entities.Notification
         {
             NotificationId = Guid.NewGuid(),
@@ -127,15 +132,45 @@ public class NotificationService : INotificationService
 
         await _notificationRepository.Insert(notification);
         await _notificationRepository.CommitAsync();
-        
-        // Note: SignalR integration should be handled in the API layer
-        // This service only handles database persistence
+
+        await _dispatcher.DispatchToUserAsync(userId, new
+        {
+            notification.NotificationId,
+            notification.UserId,
+            notification.Message,
+            notification.Type,
+            notification.IsSeen,
+            notification.CreatedAt
+        });
     }
 
     public async Task SendNotificationToRoleAsync(string role, string message, string type)
     {
-        // Note: Role-based notifications should be handled in the API layer
-        // This service only handles database persistence
-        await Task.CompletedTask;
+        var users = await _userManager.GetUsersInRoleAsync(role);
+        foreach (var user in users)
+        {
+            var notification = new Domain.Entities.Notification
+            {
+                NotificationId = Guid.NewGuid(),
+                UserId = user.Id,
+                Message = message,
+                Type = type,
+                IsSeen = false,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            await _notificationRepository.Insert(notification);
+            await _notificationRepository.CommitAsync();
+
+            await _dispatcher.DispatchToUserAsync(user.Id, new
+            {
+                notification.NotificationId,
+                notification.UserId,
+                notification.Message,
+                notification.Type,
+                notification.IsSeen,
+                notification.CreatedAt
+            });
+        }
     }
 }
