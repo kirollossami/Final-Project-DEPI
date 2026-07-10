@@ -75,6 +75,20 @@ public class ChatService : IChatService
             ?? booking.Room?.HousingUnitId
             ?? booking.Bed?.Room?.HousingUnitId;
 
+        var preBookingConversation = await _conversationRepository.GetAll()
+            .FirstOrDefaultAsync(c =>
+                c.HousingUnitId == housingUnitId &&
+                c.StudentUserId == booking.Student.UserId &&
+                c.BookingId == null);
+
+        if (preBookingConversation != null)
+        {
+            preBookingConversation.BookingId = bookingId;
+            await _conversationRepository.Update(preBookingConversation);
+            await _conversationRepository.CommitAsync();
+            return MapConversation(preBookingConversation);
+        }
+
         conversation = new Conversation
         {
             ConversationId = Guid.NewGuid(),
