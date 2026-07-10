@@ -45,6 +45,7 @@ public class UserResponse
     public string[]? Roles { get; set; }
     public Guid? StudentId { get; set; }
     public Guid? LandLordId { get; set; }
+    public int? UniversityVerificationStatus { get; set; }
 }
 
 /// <summary>
