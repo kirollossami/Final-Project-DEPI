@@ -293,7 +293,7 @@ public class AdminApprovalService : IAdminApprovalService
 
             // Approve booking
             var previousStatus = booking.BookingStatus.ToString();
-            booking.BookingStatus = BookingStatus.Approved;
+            booking.BookingStatus = BookingStatus.UnderAdminReview;
             booking.UpdatedAt = DateTime.UtcNow;
             await _unitOfWork.Bookings.Update(booking);
             await _unitOfWork.SaveChangesAsync();
@@ -303,8 +303,28 @@ public class AdminApprovalService : IAdminApprovalService
             var payment = await _unitOfWork.Payments.GetAsync(escrow.PaymentId);
             var student = await _unitOfWork.Students.GetAsync(booking.StudentId);
 
-            var landlordPayoutAmount = escrow.Amount - escrow.PlatformFee;
-            var platformFee = escrow.PlatformFee;
+            // Record payment history event
+            if (payment != null)
+            {
+                await _paymentHistoryService.RecordPaymentEventAsync(
+                    payment.PaymentId,
+                    booking.BookingId,
+                    null,
+                    booking.Student?.UserId ?? string.Empty,
+                    "ContractApprovedByAdmin",
+                    $"Contract {contract.ContractNumber} has been approved by admin. Escrow funds held in platform account.",
+                    payment.Amount,
+                    previousStatus,
+                    BookingStatus.UnderAdminReview.ToString(),
+                    request.AdminUserId,
+                    "Admin",
+                    metadata: new Dictionary<string, object>
+                    {
+                        { "ContractId", contract.ContractId },
+                        { "ContractNumber", contract.ContractNumber },
+                        { "AdminNotes", request.AdminNotes ?? "" }
+                    });
+            }
 
             // Credit landlord balance with payout amount (amount - platform fee)
             if (owner != null && !string.IsNullOrEmpty(owner.UserId))

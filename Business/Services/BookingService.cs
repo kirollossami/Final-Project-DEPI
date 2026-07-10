@@ -13,12 +13,14 @@ namespace Business.Services;
 public class BookingService : IBookingService
 {
     private readonly IBookingRepository _bookingRepository;
+    private readonly IPaymentRepository _paymentRepository;
     private readonly ICommissionRecordRepository _commissionRecordRepository;
     private readonly IStudentRepository _studentRepository;
     private readonly ILandLordRepository _landLordRepository;
     private readonly IPricingService _pricingService;
     private readonly IBookingConflictService _bookingConflictService;
     private readonly IChatService _chatService;
+    private readonly IContractWorkflowService _contractWorkflowService;
     private readonly CommissionSettings _commissionSettings;
 
     public BookingService(
@@ -29,6 +31,8 @@ public class BookingService : IBookingService
         IPricingService pricingService,
         IBookingConflictService bookingConflictService,
         IChatService chatService,
+        IPaymentRepository paymentRepository,
+        IContractWorkflowService contractWorkflowService,
         IOptions<CommissionSettings> commissionSettings)
     {
         _bookingRepository = bookingRepository;
@@ -38,23 +42,39 @@ public class BookingService : IBookingService
         _pricingService = pricingService;
         _bookingConflictService = bookingConflictService;
         _chatService = chatService;
+        _paymentRepository = paymentRepository;
+        _contractWorkflowService = contractWorkflowService;
         _commissionSettings = commissionSettings.Value;
     }
 
     public async Task<bool> ApproveBookingAsync(Guid bookingId, string adminUserId, string? adminNotes = null)
     {
-        var booking = await _bookingRepository.GetAll()
-            .Include(b => b.Contract)
-            .FirstOrDefaultAsync(b => b.BookingId == bookingId);
+        var booking = await _bookingRepository.GetAsync(bookingId);
         if (booking == null) return false;
 
-        // Only allow approval if booking is in WaitingForAdminApproval status (both parties have signed the contract)
-        if (booking.BookingStatus != Domain.Enums.BookingStatus.WaitingForAdminApproval) return false;
+        // Only allow approval if a payment exists and is completed
+        var payment = await _paymentRepository.GetByBookingIdAsync(bookingId);
+        var hasPaid = payment != null && payment.PaymentStatus == Domain.Enums.PaymentStatus.Completed;
+
+        if (!hasPaid) return false;
 
         booking.BookingStatus = Domain.Enums.BookingStatus.Approved;
         booking.UpdatedAt = DateTime.UtcNow;
         await _bookingRepository.Update(booking);
         await _bookingRepository.CommitAsync();
+
+        // Trigger contract workflow (generate contract, create escrow, receipts, notifications)
+        try
+        {
+            if (payment != null)
+            {
+                await _contractWorkflowService.StartWorkflowAsync(booking.BookingId, payment.PaymentId);
+            }
+        }
+        catch
+        {
+            // Log but do not fail approval
+        }
 
         return true;
     }
@@ -64,8 +84,10 @@ public class BookingService : IBookingService
         var booking = await _bookingRepository.GetAsync(bookingId);
         if (booking == null) return false;
 
-        // Only allow rejection if booking is in WaitingForAdminApproval status (both parties have signed the contract)
-        if (booking.BookingStatus != Domain.Enums.BookingStatus.WaitingForAdminApproval) return false;
+        // Only allow rejection if a payment exists and is completed
+        var payment = await _paymentRepository.GetByBookingIdAsync(bookingId);
+        var hasPaid = payment != null && payment.PaymentStatus == Domain.Enums.PaymentStatus.Completed;
+        if (!hasPaid) return false;
 
         booking.BookingStatus = Domain.Enums.BookingStatus.Rejected;
         booking.UpdatedAt = DateTime.UtcNow;

@@ -4,9 +4,8 @@ public class PaymobSettings
 {
     public const string SectionName = "Paymob";
     
-    public string ApiKey { get; set; } = string.Empty;        // Secret Key (egy_sk_...) — for Intention API
-    public string LegacyApiKey { get; set; } = string.Empty;  // Legacy API Key — for /api/auth/tokens
-    public string PublicKey { get; set; } = string.Empty;     // Public Key (egy_pk_...)
+    public string ApiKey { get; set; } = string.Empty;       // Secret Key (egy_sk_...)
+    public string PublicKey { get; set; } = string.Empty;    // Public Key (egy_pk_...)
     public string IntegrationId { get; set; } = string.Empty;
     public string WalletIntegrationId { get; set; } = string.Empty;
     public string CardIntegrationId { get; set; } = string.Empty;
