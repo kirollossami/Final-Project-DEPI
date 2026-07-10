@@ -36,6 +36,17 @@ public class ChatController : BaseController
         }
     }
 
+    [HttpGet("conversations")]
+    public async Task<IActionResult> GetUserConversations()
+    {
+        var userId = GetLoggedId();
+        if (string.IsNullOrEmpty(userId))
+            return Unauthorized();
+
+        var result = await _chatService.GetUserConversationsAsync(userId);
+        return Ok(result);
+    }
+
     [HttpGet("conversations/{bookingId}")]
     public async Task<IActionResult> GetConversation(Guid bookingId)
     {
