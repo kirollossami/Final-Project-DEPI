@@ -61,13 +61,11 @@ public class AdminApprovalService : IAdminApprovalService
     // =========================================================================
     public async Task<AdminContractApprovalResponse> UploadContractAsync(AdminUploadContractRequest request)
     {
-        using var tx = await _unitOfWork.BeginTransactionAsync();
-        try
+        return await _unitOfWork.ExecuteInTransactionAsync(async () =>
         {
             var booking = await _unitOfWork.Bookings.GetAsync(request.BookingId);
             if (booking == null)
             {
-                await _unitOfWork.RollbackTransactionAsync();
                 return Fail("Booking not found");
             }
 
@@ -76,13 +74,11 @@ public class AdminApprovalService : IAdminApprovalService
 
             if (booking.BookingStatus != BookingStatus.WaitingForContract && !(booking.BookingStatus == BookingStatus.PendingPayment && isPaymentCompleted))
             {
-                await _unitOfWork.RollbackTransactionAsync();
                 return Fail($"Booking is not awaiting a contract. Current status: {booking.BookingStatus}");
             }
 
             if (!isPaymentCompleted)
             {
-                await _unitOfWork.RollbackTransactionAsync();
                 return Fail("No completed payment found for this booking");
             }
 
@@ -90,14 +86,12 @@ public class AdminApprovalService : IAdminApprovalService
             var existingContract = await _unitOfWork.Contracts.GetByBookingIdAsync(booking.BookingId);
             if (existingContract != null)
             {
-                await _unitOfWork.RollbackTransactionAsync();
                 return Fail("A contract already exists for this booking");
             }
 
             // Use ContractService for manual upload (escrow is created internally)
             if (request.PdfStream == null || string.IsNullOrEmpty(request.FileName))
             {
-                await _unitOfWork.RollbackTransactionAsync();
                 return Fail("PDF file and file name are required for contract upload");
             }
 
@@ -113,7 +107,6 @@ public class AdminApprovalService : IAdminApprovalService
             var escrow = await _unitOfWork.EscrowTransactions.GetByPaymentIdAsync(payment.PaymentId);
             if (escrow == null)
             {
-                await _unitOfWork.RollbackTransactionAsync();
                 return Fail("Escrow transaction not found. Please ensure payment was fully processed.");
             }
 
@@ -131,7 +124,6 @@ public class AdminApprovalService : IAdminApprovalService
             var owner = await ResolveOwnerAsync(booking);
             if (owner == null)
             {
-                await _unitOfWork.RollbackTransactionAsync();
                 return Fail("Landlord not found for this booking");
             }
 
@@ -174,9 +166,6 @@ public class AdminApprovalService : IAdminApprovalService
                     { "EscrowId", escrow.EscrowId }
                 });
 
-            await _unitOfWork.SaveChangesAsync();
-            await _unitOfWork.CommitTransactionAsync();
-
             _logger.LogInformation(
                 "Contract uploaded and escrow created for booking {BookingId}", booking.BookingId);
 
@@ -195,13 +184,7 @@ public class AdminApprovalService : IAdminApprovalService
                 ContractId = contractResponse.ContractId,
                 EscrowId = escrow.EscrowId
             };
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error in UploadContractAsync for booking {BookingId}", request.BookingId);
-            try { await _unitOfWork.RollbackTransactionAsync(); } catch { }
-            return Fail($"Error: {ex.Message}");
-        }
+        });
     }
 
     // =========================================================================
@@ -215,48 +198,72 @@ public class AdminApprovalService : IAdminApprovalService
     // =========================================================================
     public async Task<AdminContractApprovalResponse> ApproveContractAsync(AdminContractApprovalRequest request)
     {
-        using var tx = await _unitOfWork.BeginTransactionAsync();
-        try
+        return await _unitOfWork.ExecuteInTransactionAsync(async () =>
         {
             var contract = await _unitOfWork.Contracts.GetAsync(request.ContractId);
             if (contract == null)
             {
-                await _unitOfWork.RollbackTransactionAsync();
                 return Fail("Contract not found");
             }
 
             if (!contract.IsStudentSigned || !contract.IsLandlordSigned)
             {
-                await _unitOfWork.RollbackTransactionAsync();
                 return Fail("Contract must be signed by both parties before approval");
             }
 
             var booking = await _unitOfWork.Bookings.GetAsync(contract.BookingId);
-            if (booking == null || booking.BookingStatus != BookingStatus.WaitingForAdminApproval)
+            if (booking == null)
             {
-                await _unitOfWork.RollbackTransactionAsync();
-                return Fail(booking == null ? "Booking not found"
-                    : $"Booking is not in WaitingForAdminApproval. Status: {booking.BookingStatus}");
+                return Fail("Booking not found");
+            }
+
+            // If both parties signed but booking status is not updated, fix it
+            if (contract.IsStudentSigned && contract.IsLandlordSigned &&
+                booking.BookingStatus != BookingStatus.WaitingForAdminApproval)
+            {
+                booking.BookingStatus = BookingStatus.WaitingForAdminApproval;
+                booking.UpdatedAt = DateTime.UtcNow;
+                await _unitOfWork.Bookings.Update(booking);
+                _logger.LogInformation("Booking {BookingId} status updated to WaitingForAdminApproval for contract approval",
+                    booking.BookingId);
+            }
+
+            if (booking.BookingStatus != BookingStatus.WaitingForAdminApproval)
+            {
+                return Fail($"Booking is not in WaitingForAdminApproval. Status: {booking.BookingStatus}");
             }
 
             if (contract.IsAdminApproved)
             {
-                await _unitOfWork.RollbackTransactionAsync();
                 return Fail("Contract is already approved");
             }
 
             // Find escrow linked to this contract
             var escrow = await _unitOfWork.EscrowTransactions.GetByContractIdAsync(contract.ContractId);
+            
+            // Fallback: try to find escrow by booking ID if not found by contract ID
             if (escrow == null)
             {
-                await _unitOfWork.RollbackTransactionAsync();
+                escrow = await _unitOfWork.EscrowTransactions.GetByBookingIdAsync(booking.BookingId);
+                if (escrow != null)
+                {
+                    // Link the escrow to the contract
+                    escrow.ContractId = contract.ContractId;
+                    escrow.UpdatedAt = DateTime.UtcNow;
+                    await _unitOfWork.EscrowTransactions.Update(escrow);
+                    _logger.LogInformation("Escrow {EscrowId} linked to contract {ContractId} during approval",
+                        escrow.EscrowId, contract.ContractId);
+                }
+            }
+            
+            if (escrow == null)
+            {
                 return Fail("Escrow not found for this contract");
             }
 
             // Idempotency check: if escrow already released, return success
             if (escrow.Status == EscrowStatus.Released)
             {
-                await _unitOfWork.RollbackTransactionAsync();
                 _logger.LogInformation("Escrow {EscrowId} already released. Returning success.", escrow.EscrowId);
                 return new AdminContractApprovalResponse
                 {
@@ -270,7 +277,6 @@ public class AdminApprovalService : IAdminApprovalService
 
             if (escrow.Status != EscrowStatus.Holding)
             {
-                await _unitOfWork.RollbackTransactionAsync();
                 return Fail($"Escrow is not in Holding status. Status: {escrow.Status}");
             }
 
@@ -411,9 +417,6 @@ public class AdminApprovalService : IAdminApprovalService
                     });
             }
 
-            await _unitOfWork.SaveChangesAsync();
-            await _unitOfWork.CommitTransactionAsync();
-
             _logger.LogInformation(
                 "Contract {Number} approved. Booking {BookingId} Approved. Landlord payout: {LandlordPayout}, Platform fee: {PlatformFee}",
                 contract.ContractNumber, booking.BookingId, landlordPayoutAmount, platformFee);
@@ -434,13 +437,7 @@ public class AdminApprovalService : IAdminApprovalService
                 EscrowId = escrow.EscrowId,
                 IsOwnerPayoutProcessed = true
             };
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error in ApproveContractAsync for contract {ContractId}", request.ContractId);
-            try { await _unitOfWork.RollbackTransactionAsync(); } catch { }
-            return Fail($"Error: {ex.Message}");
-        }
+        });
     }
 
     // =========================================================================
@@ -451,13 +448,11 @@ public class AdminApprovalService : IAdminApprovalService
     // =========================================================================
     public async Task<AdminContractApprovalResponse> RejectContractAsync(AdminContractApprovalRequest request)
     {
-        using var tx = await _unitOfWork.BeginTransactionAsync();
-        try
+        return await _unitOfWork.ExecuteInTransactionAsync(async () =>
         {
             var contract = await _unitOfWork.Contracts.GetAsync(request.ContractId);
             if (contract == null)
             {
-                await _unitOfWork.RollbackTransactionAsync();
                 return Fail("Contract not found");
             }
 
@@ -470,7 +465,6 @@ public class AdminApprovalService : IAdminApprovalService
             var booking = await _unitOfWork.Bookings.GetAsync(contract.BookingId);
             if (booking == null)
             {
-                await _unitOfWork.RollbackTransactionAsync();
                 return Fail("Booking not found");
             }
 
@@ -592,9 +586,6 @@ public class AdminApprovalService : IAdminApprovalService
                     });
             }
 
-            await _unitOfWork.SaveChangesAsync();
-            await _unitOfWork.CommitTransactionAsync();
-
             _logger.LogInformation(
                 "Contract {Number} rejected by admin {AdminId}. Refund processed via {PaymentMethod}",
                 contract.ContractNumber, request.AdminUserId, payment?.PaymentMethod.ToString());
@@ -616,13 +607,7 @@ public class AdminApprovalService : IAdminApprovalService
                 EscrowId = escrow?.EscrowId,
                 IsEscrowRefunded = true
             };
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error in RejectContractAsync for contract {ContractId}", request.ContractId);
-            try { await _unitOfWork.RollbackTransactionAsync(); } catch { }
-            return Fail($"Error: {ex.Message}");
-        }
+        });
     }
 
     // =========================================================================
@@ -630,20 +615,17 @@ public class AdminApprovalService : IAdminApprovalService
     // =========================================================================
     public async Task<AdminContractApprovalResponse> ProcessEscrowReleaseAsync(EscrowReleaseRequest request)
     {
-        using var tx = await _unitOfWork.BeginTransactionAsync();
-        try
+        return await _unitOfWork.ExecuteInTransactionAsync(async () =>
         {
             var escrow = await _unitOfWork.EscrowTransactions.GetAsync(request.EscrowId);
             if (escrow == null)
             {
-                await _unitOfWork.RollbackTransactionAsync();
                 return Fail("Escrow not found");
             }
 
             // Idempotency check
             if (escrow.Status == EscrowStatus.Released)
             {
-                await _unitOfWork.RollbackTransactionAsync();
                 _logger.LogInformation("Escrow {EscrowId} already released. Returning success.", escrow.EscrowId);
                 return new AdminContractApprovalResponse
                 {
@@ -656,14 +638,12 @@ public class AdminApprovalService : IAdminApprovalService
 
             if (escrow.Status != EscrowStatus.Holding)
             {
-                await _unitOfWork.RollbackTransactionAsync();
                 return Fail($"Escrow not Holding. Status: {escrow.Status}");
             }
 
             var contract = await _unitOfWork.Contracts.GetAsync(escrow.ContractId);
             if (contract == null || !contract.IsAdminApproved)
             {
-                await _unitOfWork.RollbackTransactionAsync();
                 return Fail("Contract must be admin-approved before manual escrow release");
             }
 
@@ -718,39 +698,27 @@ public class AdminApprovalService : IAdminApprovalService
                 });
             }
 
-            await _unitOfWork.SaveChangesAsync();
-            await _unitOfWork.CommitTransactionAsync();
-
             return new AdminContractApprovalResponse
             {
                 Success = true, Message = "Escrow released",
                 EscrowId = request.EscrowId, IsOwnerPayoutProcessed = true
             };
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error in ProcessEscrowReleaseAsync");
-            try { await _unitOfWork.RollbackTransactionAsync(); } catch { }
-            return Fail($"Error: {ex.Message}");
-        }
+        });
     }
 
     public async Task<AdminContractApprovalResponse> ProcessEscrowRefundAsync(EscrowRefundRequest request)
     {
-        using var tx = await _unitOfWork.BeginTransactionAsync();
-        try
+        return await _unitOfWork.ExecuteInTransactionAsync(async () =>
         {
             var escrow = await _unitOfWork.EscrowTransactions.GetAsync(request.EscrowId);
             if (escrow == null)
             {
-                await _unitOfWork.RollbackTransactionAsync();
                 return Fail("Escrow not found");
             }
 
             // Idempotency check
             if (escrow.Status == EscrowStatus.Refunded)
             {
-                await _unitOfWork.RollbackTransactionAsync();
                 _logger.LogInformation("Escrow {EscrowId} already refunded. Returning success.", escrow.EscrowId);
                 return new AdminContractApprovalResponse
                 {
@@ -763,7 +731,6 @@ public class AdminApprovalService : IAdminApprovalService
 
             if (escrow.Status != EscrowStatus.Holding)
             {
-                await _unitOfWork.RollbackTransactionAsync();
                 return Fail($"Escrow not Holding. Status: {escrow.Status}");
             }
 
@@ -827,21 +794,12 @@ public class AdminApprovalService : IAdminApprovalService
                     "RefundProcessed");
             }
 
-            await _unitOfWork.SaveChangesAsync();
-            await _unitOfWork.CommitTransactionAsync();
-
             return new AdminContractApprovalResponse
             {
                 Success = true, Message = "Escrow refunded",
                 EscrowId = request.EscrowId, IsEscrowRefunded = true
             };
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error in ProcessEscrowRefundAsync");
-            try { await _unitOfWork.RollbackTransactionAsync(); } catch { }
-            return Fail($"Error: {ex.Message}");
-        }
+        });
     }
 
     // =========================================================================
