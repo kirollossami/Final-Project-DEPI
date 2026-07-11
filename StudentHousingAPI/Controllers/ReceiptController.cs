@@ -355,7 +355,7 @@ public class ReceiptController : BaseController
                     r.IssuedToName,
                     r.IssuedToRole,
                     r.CreatedAt,
-                    PdfUrl = r.ReceiptPdfUrl
+                    PdfUrl = $"/api/Receipt/{r.ReceiptId}/download"
                 }).ToList()
             };
 

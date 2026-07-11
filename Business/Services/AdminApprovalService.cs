@@ -293,7 +293,7 @@ public class AdminApprovalService : IAdminApprovalService
 
             // Approve booking
             var previousStatus = booking.BookingStatus.ToString();
-            booking.BookingStatus = BookingStatus.WaitingForAdminApproval;
+            booking.BookingStatus = BookingStatus.Approved;
             booking.UpdatedAt = DateTime.UtcNow;
             await _unitOfWork.Bookings.Update(booking);
             await _unitOfWork.SaveChangesAsync();
@@ -313,13 +313,13 @@ public class AdminApprovalService : IAdminApprovalService
                 await _paymentHistoryService.RecordPaymentEventAsync(
                     payment.PaymentId,
                     booking.BookingId,
-                    null,
+                    escrow.EscrowId,
                     booking.Student?.UserId ?? string.Empty,
                     "ContractApprovedByAdmin",
                     $"Contract {contract.ContractNumber} has been approved by admin. Escrow funds held in platform account.",
                     payment.Amount,
                     previousStatus,
-                    BookingStatus.WaitingForAdminApproval.ToString(),
+                    BookingStatus.Approved.ToString(),
                     request.AdminUserId,
                     "Admin",
                     metadata: new Dictionary<string, object>
@@ -329,6 +329,16 @@ public class AdminApprovalService : IAdminApprovalService
                         { "AdminNotes", request.AdminNotes ?? "" }
                     });
             }
+
+            // Debit admin balance: the full escrow amount was credited during payment callback.
+            // We now release it by debiting the full amount, then re-crediting only the platform fee.
+            await _balanceService.DeductFromBalanceAsync(
+                request.AdminUserId, "Admin",
+                escrow.Amount,
+                $"Escrow release for contract {contract.ContractNumber}");
+            _logger.LogInformation(
+                "Debited admin {UserId} with {Amount} EGP (escrow release) for contract {Number}",
+                request.AdminUserId, escrow.Amount, contract.ContractNumber);
 
             // Credit landlord balance with payout amount (amount - platform fee)
             if (owner != null && !string.IsNullOrEmpty(owner.UserId))
@@ -500,7 +510,16 @@ public class AdminApprovalService : IAdminApprovalService
                                     RefundReason = $"Contract rejected: {request.AdminNotes}"
                                 };
                                 await _escrowService.RefundEscrowAsync(refundReq);
-                                _logger.LogInformation("Paymob refund processed for escrow {EscrowId}", escrow.EscrowId);
+
+                                // Debit admin: the full escrow amount was credited during payment callback.
+                                // Now that Paymob has refunded the student, remove from admin balance.
+                                await _balanceService.DeductFromBalanceAsync(
+                                    request.AdminUserId, "Admin",
+                                    escrow.Amount,
+                                    $"Escrow refund (Paymob) for rejected contract {contract.ContractNumber}");
+                                _logger.LogInformation(
+                                    "Debited admin {UserId} with {Amount} EGP (Paymob escrow refund) for rejected contract {Number}",
+                                    request.AdminUserId, escrow.Amount, contract.ContractNumber);
                             }
                             catch (Exception ex)
                             {
@@ -511,7 +530,14 @@ public class AdminApprovalService : IAdminApprovalService
                     }
                     else if (payment.PaymentMethod == PaymentMethod.Wallet)
                     {
-                        // Wallet refund: credit student wallet balance
+                        // Wallet refund: debit admin (who holds escrow) and credit student
+                        await _balanceService.DeductFromBalanceAsync(
+                            request.AdminUserId, "Admin",
+                            escrow.Amount,
+                            $"Escrow refund for rejected contract {contract.ContractNumber}");
+                        _logger.LogInformation("Debited admin {UserId} with {Amount} EGP (escrow refund) for rejected contract {Number}",
+                            request.AdminUserId, escrow.Amount, contract.ContractNumber);
+
                         if (student != null && !string.IsNullOrEmpty(student.UserId))
                         {
                             await _balanceService.AddToBalanceAsync(
@@ -575,6 +601,11 @@ public class AdminApprovalService : IAdminApprovalService
 
             await NotifySafe(student?.UserId,
                 $"Your contract was rejected. Reason: {request.AdminNotes}. Your refund is being processed.",
+                "ContractRejected");
+
+            var owner = await ResolveOwnerAsync(booking);
+            await NotifySafe(owner?.UserId,
+                $"Contract {contract.ContractNumber} has been rejected. Reason: {request.AdminNotes}",
                 "ContractRejected");
 
             return new AdminContractApprovalResponse
@@ -648,6 +679,12 @@ public class AdminApprovalService : IAdminApprovalService
             {
                 var landlordPayoutAmount = escrow.Amount - escrow.PlatformFee;
                 var platformFee = escrow.PlatformFee;
+
+                // Debit admin: full escrow amount was credited during payment callback
+                await _balanceService.DeductFromBalanceAsync(
+                    request.AdminUserId, "Admin",
+                    escrow.Amount,
+                    $"Manual escrow release for contract {contract.ContractNumber}");
 
                 // Credit landlord balance with payout amount (amount - platform fee)
                 await _balanceService.AddToBalanceAsync(
@@ -753,6 +790,12 @@ public class AdminApprovalService : IAdminApprovalService
             {
                 if (payment.PaymentMethod == PaymentMethod.Wallet && !string.IsNullOrEmpty(student.UserId))
                 {
+                    // Debit admin who holds the escrow funds
+                    await _balanceService.DeductFromBalanceAsync(
+                        request.AdminUserId, "Admin",
+                        escrow.Amount,
+                        $"Manual escrow refund: {request.RefundReason}");
+
                     // Wallet refund: credit student wallet balance
                     await _balanceService.AddToBalanceAsync(
                         student.UserId, "Student",

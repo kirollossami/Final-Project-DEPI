@@ -77,6 +77,7 @@ public class BookingConflictService : IBookingConflictService
         // Check if the bed itself is booked
         var bedBookings = await _bookingRepository.GetAll()
             .Where(b => b.BedId == bedId &&
+                        !b.IsDeleted &&
                         ActiveBookingStatuses.Contains(b.BookingStatus) &&
                         ((b.StartDate <= startDate && b.EndDate >= startDate) ||
                          (b.StartDate <= endDate && b.EndDate >= endDate) ||
@@ -101,13 +102,14 @@ public class BookingConflictService : IBookingConflictService
         // Check if the room is booked (which would make all beds unavailable)
         var bed = await _bedRepository.GetAll()
             .Include(b => b.Room)
-            .FirstOrDefaultAsync(b => b.BedId == bedId);
+            .FirstOrDefaultAsync(b => b.BedId == bedId && !b.IsDeleted);
 
         if (bed?.Room != null)
         {
             var roomBookings = await _bookingRepository.GetAll()
                 .Where(b => b.RoomId == bed.Room.RoomId &&
                             b.BookingType == BookingType.Room &&
+                            !b.IsDeleted &&
                             ActiveBookingStatuses.Contains(b.BookingStatus) &&
                             ((b.StartDate <= startDate && b.EndDate >= startDate) ||
                              (b.StartDate <= endDate && b.EndDate >= endDate) ||
@@ -136,6 +138,7 @@ public class BookingConflictService : IBookingConflictService
             var unitBookings = await _bookingRepository.GetAll()
                 .Where(b => b.HousingUnitId == bed.Room.HousingUnitId &&
                             b.BookingType == BookingType.Unit &&
+                            !b.IsDeleted &&
                             ActiveBookingStatuses.Contains(b.BookingStatus) &&
                             ((b.StartDate <= startDate && b.EndDate >= startDate) ||
                              (b.StartDate <= endDate && b.EndDate >= endDate) ||
@@ -176,6 +179,7 @@ public class BookingConflictService : IBookingConflictService
             var bedBookings = await _bookingRepository.GetAll()
                 .Where(b => bedIds.Contains(b.BedId.Value) &&
                             b.BookingType == BookingType.Bed &&
+                            !b.IsDeleted &&
                             ActiveBookingStatuses.Contains(b.BookingStatus) &&
                             ((b.StartDate <= startDate && b.EndDate >= startDate) ||
                              (b.StartDate <= endDate && b.EndDate >= endDate) ||
@@ -202,6 +206,7 @@ public class BookingConflictService : IBookingConflictService
         var roomBookings = await _bookingRepository.GetAll()
             .Where(b => b.RoomId == roomId &&
                         b.BookingType == BookingType.Room &&
+                        !b.IsDeleted &&
                         ActiveBookingStatuses.Contains(b.BookingStatus) &&
                         ((b.StartDate <= startDate && b.EndDate >= startDate) ||
                          (b.StartDate <= endDate && b.EndDate >= endDate) ||
@@ -230,6 +235,7 @@ public class BookingConflictService : IBookingConflictService
             var unitBookings = await _bookingRepository.GetAll()
                 .Where(b => b.HousingUnitId == room.HousingUnitId &&
                             b.BookingType == BookingType.Unit &&
+                            !b.IsDeleted &&
                             ActiveBookingStatuses.Contains(b.BookingStatus) &&
                             ((b.StartDate <= startDate && b.EndDate >= startDate) ||
                              (b.StartDate <= endDate && b.EndDate >= endDate) ||
@@ -277,6 +283,7 @@ public class BookingConflictService : IBookingConflictService
             var bedBookings = await _bookingRepository.GetAll()
                 .Where(b => bedIds.Contains(b.BedId.Value) &&
                             b.BookingType == BookingType.Bed &&
+                            !b.IsDeleted &&
                             ActiveBookingStatuses.Contains(b.BookingStatus) &&
                             ((b.StartDate <= startDate && b.EndDate >= startDate) ||
                              (b.StartDate <= endDate && b.EndDate >= endDate) ||
@@ -305,6 +312,7 @@ public class BookingConflictService : IBookingConflictService
             var roomBookings = await _bookingRepository.GetAll()
                 .Where(b => roomIds.Contains(b.RoomId.Value) &&
                             b.BookingType == BookingType.Room &&
+                            !b.IsDeleted &&
                             ActiveBookingStatuses.Contains(b.BookingStatus) &&
                             ((b.StartDate <= startDate && b.EndDate >= startDate) ||
                              (b.StartDate <= endDate && b.EndDate >= endDate) ||
@@ -331,6 +339,7 @@ public class BookingConflictService : IBookingConflictService
         var unitBookings = await _bookingRepository.GetAll()
             .Where(b => b.HousingUnitId == housingUnitId &&
                         b.BookingType == BookingType.Unit &&
+                        !b.IsDeleted &&
                         ActiveBookingStatuses.Contains(b.BookingStatus) &&
                         ((b.StartDate <= startDate && b.EndDate >= startDate) ||
                          (b.StartDate <= endDate && b.EndDate >= endDate) ||

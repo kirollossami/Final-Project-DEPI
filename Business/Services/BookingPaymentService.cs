@@ -599,7 +599,22 @@ public class BookingPaymentService : IBookingPaymentService
                 currentStep = "Resolving landlord";
                 _logger.LogInformation("╠══ STEP: {Step} | RoomId={RoomId} HousingUnitId={HUId}", currentStep, booking.RoomId, booking.HousingUnitId);
                 LandLord? landlord = null;
-                if (booking.RoomId.HasValue)
+                if (booking.BedId.HasValue)
+                {
+                    var bed = await _unitOfWork.Beds.GetAsync(booking.BedId.Value);
+                    if (bed?.Room?.HousingUnit != null)
+                        landlord = await _unitOfWork.LandLords.GetAsync(bed.Room.HousingUnit.LandLordId);
+                    else if (bed != null)
+                    {
+                        var room = await _unitOfWork.Rooms.GetAsync(bed.RoomId);
+                        if (room != null)
+                        {
+                            var hu = await _unitOfWork.HousingUnits.GetAsync(room.HousingUnitId);
+                            if (hu != null) landlord = await _unitOfWork.LandLords.GetAsync(hu.LandLordId);
+                        }
+                    }
+                }
+                else if (booking.RoomId.HasValue)
                 {
                     var room = await _unitOfWork.Rooms.GetAsync(booking.RoomId.Value);
                     if (room != null)

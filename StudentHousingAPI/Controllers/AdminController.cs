@@ -245,7 +245,6 @@ public class AdminController : BaseController
             {
                 booking.BookingStatus = BookingStatus.WaitingForContract;
                 booking.UpdatedAt = DateTime.UtcNow;
-                await _unitOfWork.Bookings.Update(booking);
                 await _unitOfWork.SaveChangesAsync();
             }
 
@@ -261,11 +260,9 @@ public class AdminController : BaseController
                     payment.PaymentStatus = PaymentStatus.Completed;
                     payment.CompletedAt = paymentTxn.CompletedAt ?? DateTime.UtcNow;
                     payment.TransactionId = paymentTxn.PaymobTransactionId ?? paymentTxn.PaymobOrderId;
-                    await _unitOfWork.Payments.Update(payment);
 
                     booking.BookingStatus = BookingStatus.WaitingForContract;
                     booking.UpdatedAt = DateTime.UtcNow;
-                    await _unitOfWork.Bookings.Update(booking);
                     await _unitOfWork.SaveChangesAsync();
                     isPaymentCompleted = true;
                 }
@@ -273,6 +270,11 @@ public class AdminController : BaseController
 
             if (booking.BookingStatus != BookingStatus.WaitingForContract)
                 return BadRequest(new { Message = $"Booking is not ready for contract. Current status: {booking.BookingStatus}. Payment status: {payment?.PaymentStatus}" });
+
+            // Check if a contract already exists for this booking (unique 1:1 constraint)
+            var existingContract = await _unitOfWork.Contracts.GetByBookingIdAsync(bookingId);
+            if (existingContract != null)
+                return BadRequest(new { Message = "A contract already exists for this booking.", ContractId = existingContract.ContractId });
 
             if (contractFile == null || contractFile.Length == 0)
                 return BadRequest(new { Message = "Contract file is required" });
@@ -286,7 +288,7 @@ public class AdminController : BaseController
 
             // Get booking details for contract
             var student = await _unitOfWork.Students.GetAsync(booking.StudentId);
-            var landlord = GetOwnerFromBooking(booking);
+            var landlord = await GetOwnerFromBookingAsync(booking);
 
             // Create contract record
             var contract = new Contract
@@ -304,16 +306,19 @@ public class AdminController : BaseController
                 StudentFullName = student?.User?.UserName ?? "Unknown",
                 StudentNationalId = student?.NationalId ?? "N/A",
                 OriginalContractPdfPath = filePath,
+                IsStudentSigned = false,
+                IsLandlordSigned = false,
+                IsAdminApproved = false,
                 ContractStatus = ContractStatus.WaitingForSignatures,
                 CreatedAt = DateTime.UtcNow
             };
 
             await _unitOfWork.Contracts.Insert(contract);
-            
-            // Update booking status
+
+            // Update booking status and link the contract
+            booking.ContractId = contract.ContractId;
             booking.BookingStatus = BookingStatus.WaitingForSignatures;
             booking.UpdatedAt = DateTime.UtcNow;
-            await _unitOfWork.Bookings.Update(booking);
 
             await _unitOfWork.SaveChangesAsync();
 
@@ -348,7 +353,12 @@ public class AdminController : BaseController
         }
         catch (Exception ex)
         {
-            return StatusCode(500, new { Message = $"Error uploading contract: {ex.Message}" });
+            var innerMessage = ex.InnerException?.Message ?? ex.InnerException?.InnerException?.Message;
+            return StatusCode(500, new
+            {
+                Message = $"Error uploading contract: {ex.Message}",
+                Detail = innerMessage
+            });
         }
     }
 
@@ -400,7 +410,7 @@ public class AdminController : BaseController
                 var student = await _unitOfWork.Students.GetAsync(booking.StudentId);
                 if (student?.UserId != null)
                     await _notificationService.SendRealTimeNotificationAsync(student.UserId, "Your payment has been completed successfully.", NotificationTypes.PaymentCompleted);
-                var landlord = GetOwnerFromBooking(booking);
+                var landlord = await GetOwnerFromBookingAsync(booking);
                 if (landlord?.UserId != null)
                     await _notificationService.SendRealTimeNotificationAsync(landlord.UserId, "Payment has been completed for your property.", NotificationTypes.PaymentCompleted);
             }
@@ -476,7 +486,7 @@ public class AdminController : BaseController
             // Add balance to landlord using balance service
             try
             {
-                var landlord = GetOwnerFromBooking(booking);
+                var landlord = await GetOwnerFromBookingAsync(booking);
                 if (landlord != null && !string.IsNullOrEmpty(landlord.UserId))
                 {
                     await _balanceService.AddToBalanceAsync(
@@ -496,7 +506,7 @@ public class AdminController : BaseController
             try
             {
                 var student = await _unitOfWork.Students.GetAsync(booking.StudentId);
-                var landlord = GetOwnerFromBooking(booking);
+                var landlord = await GetOwnerFromBookingAsync(booking);
 
                 if (!string.IsNullOrEmpty(student?.UserId))
                     await _notificationService.SendRealTimeNotificationAsync(
@@ -604,7 +614,7 @@ public class AdminController : BaseController
             try
             {
                 var student = await _unitOfWork.Students.GetAsync(booking.StudentId);
-                var landlord = GetOwnerFromBooking(booking);
+                var landlord = await GetOwnerFromBookingAsync(booking);
 
                 if (!string.IsNullOrEmpty(student?.UserId))
                     await _notificationService.SendRealTimeNotificationAsync(
@@ -637,27 +647,27 @@ public class AdminController : BaseController
         }
     }
 
-    private LandLord? GetOwnerFromBooking(Booking? booking)
+    private async Task<LandLord?> GetOwnerFromBookingAsync(Booking? booking)
     {
         if (booking == null) return null;
 
         if (booking.BedId.HasValue)
         {
-            var bed = _unitOfWork.Beds.GetAsync(booking.BedId.Value).Result;
+            var bed = await _unitOfWork.Beds.GetAsync(booking.BedId.Value);
             if (bed?.Room?.HousingUnit != null)
-                return _unitOfWork.LandLords.GetAsync(bed.Room.HousingUnit.LandLordId).Result;
+                return await _unitOfWork.LandLords.GetAsync(bed.Room.HousingUnit.LandLordId);
         }
         else if (booking.RoomId.HasValue)
         {
-            var room = _unitOfWork.Rooms.GetAsync(booking.RoomId.Value).Result;
+            var room = await _unitOfWork.Rooms.GetAsync(booking.RoomId.Value);
             if (room?.HousingUnit != null)
-                return _unitOfWork.LandLords.GetAsync(room.HousingUnit.LandLordId).Result;
+                return await _unitOfWork.LandLords.GetAsync(room.HousingUnit.LandLordId);
         }
         else if (booking.HousingUnitId.HasValue)
         {
-            var housingUnit = _unitOfWork.HousingUnits.GetAsync(booking.HousingUnitId.Value).Result;
+            var housingUnit = await _unitOfWork.HousingUnits.GetAsync(booking.HousingUnitId.Value);
             if (housingUnit != null)
-                return _unitOfWork.LandLords.GetAsync(housingUnit.LandLordId).Result;
+                return await _unitOfWork.LandLords.GetAsync(housingUnit.LandLordId);
         }
 
         return null;

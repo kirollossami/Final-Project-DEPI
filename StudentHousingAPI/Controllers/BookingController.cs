@@ -318,7 +318,7 @@ public class BookingController : BaseController
                                 r.Amount,
                                 r.Currency,
                                 r.Type,
-                                r.ReceiptPdfUrl,
+                                ReceiptPdfUrl = $"/api/Receipt/{r.ReceiptId}/download",
                                 r.CreatedAt
                             })
                         });
@@ -356,7 +356,7 @@ public class BookingController : BaseController
                         r.Amount,
                         r.Currency,
                         r.Type,
-                        r.ReceiptPdfUrl,
+                        ReceiptPdfUrl = $"/api/Receipt/{r.ReceiptId}/download",
                         r.CreatedAt
                     })
                 });
