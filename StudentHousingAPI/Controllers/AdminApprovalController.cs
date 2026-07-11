@@ -122,28 +122,6 @@ public class AdminApprovalController : BaseController
         if (!result.Success)
             return BadRequest(new { Message = result.Message });
 
-        try
-        {
-            var contract = await _unitOfWork.Contracts.GetAsync(request.ContractId);
-            if (contract != null)
-            {
-                var booking = await _unitOfWork.Bookings.GetAsync(contract.BookingId);
-                if (booking != null)
-                {
-                    var student = await _unitOfWork.Students.GetAsync(booking.StudentId);
-                    if (student?.UserId != null)
-                        await _notificationService.SendRealTimeNotificationAsync(student.UserId,
-                            "Your contract has been approved by the admin.", NotificationTypes.ContractApproved);
-
-                    var landlord = await ResolveLandlordAsync(booking);
-                    if (landlord?.UserId != null)
-                        await _notificationService.SendRealTimeNotificationAsync(landlord.UserId,
-                            "The contract has been approved by the admin.", NotificationTypes.ContractApproved);
-                }
-            }
-        }
-        catch { }
-
         return Ok(result);
     }
 
@@ -159,28 +137,6 @@ public class AdminApprovalController : BaseController
 
         if (!result.Success)
             return BadRequest(new { Message = result.Message });
-
-        try
-        {
-            var contract = await _unitOfWork.Contracts.GetAsync(request.ContractId);
-            if (contract != null)
-            {
-                var booking = await _unitOfWork.Bookings.GetAsync(contract.BookingId);
-                if (booking != null)
-                {
-                    var student = await _unitOfWork.Students.GetAsync(booking.StudentId);
-                    if (student?.UserId != null)
-                        await _notificationService.SendRealTimeNotificationAsync(student.UserId,
-                            "Your contract has been rejected by the admin.", NotificationTypes.ContractRejected);
-
-                    var landlord = await ResolveLandlordAsync(booking);
-                    if (landlord?.UserId != null)
-                        await _notificationService.SendRealTimeNotificationAsync(landlord.UserId,
-                            "The contract has been rejected by the admin.", NotificationTypes.ContractRejected);
-                }
-            }
-        }
-        catch { }
 
         return Ok(result);
     }

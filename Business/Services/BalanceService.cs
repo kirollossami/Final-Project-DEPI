@@ -24,6 +24,17 @@ public class BalanceService : IBalanceService
         return balance?.AvailableBalance;
     }
 
+    public async Task<Balance?> GetFullBalanceByUserIdAsync(string userId)
+    {
+        return await _unitOfWork.Balances.GetAll()
+            .FirstOrDefaultAsync(b => b.UserId == userId);
+    }
+
+    public async Task<IEnumerable<Balance>> GetAllBalancesAsync()
+    {
+        return await _unitOfWork.Balances.GetAll().ToListAsync();
+    }
+
     public async Task AddToBalanceAsync(string userId, string userRole, decimal amount, string reference)
     {
         var balance = await GetOrCreateBalanceAsync(userId, userRole);

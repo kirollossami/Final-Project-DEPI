@@ -8,6 +8,16 @@ public interface IBalanceService
     Task<decimal?> GetBalanceByUserIdAsync(string userId);
     
     /// <summary>
+    /// Get full balance entity by user ID (returns null if no balance exists)
+    /// </summary>
+    Task<Domain.Entities.Balance?> GetFullBalanceByUserIdAsync(string userId);
+
+    /// <summary>
+    /// Get all balances (admin only)
+    /// </summary>
+    Task<IEnumerable<Domain.Entities.Balance>> GetAllBalancesAsync();
+    
+    /// <summary>
     /// Add funds to user's balance
     /// </summary>
     Task AddToBalanceAsync(string userId, string userRole, decimal amount, string reference);

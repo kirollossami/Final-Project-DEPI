@@ -62,6 +62,9 @@ public class ContractService : IContractService
                 BookingId = bookingId,
                 ContractNumber = $"CTR-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString()[..8].ToUpper()}",
                 OriginalContractPdfPath = pdfUrl,
+                IsStudentSigned = false,
+                IsLandlordSigned = false,
+                IsAdminApproved = false,
                 ContractStatus = ContractStatus.WaitingForSignatures,
                 CreatedAt = DateTime.UtcNow
             };
@@ -153,6 +156,23 @@ public class ContractService : IContractService
             if (booking != null && !signingAllowedStatuses.Contains(booking.BookingStatus))
                 throw new InvalidOperationException(
                     $"Booking is not in a signable state. Current status: {booking.BookingStatus}");
+
+            // Ownership validation — ensure the signing user owns this booking
+            if (booking != null && !string.IsNullOrEmpty(request.UserId))
+            {
+                if (request.Role.Equals("Student", StringComparison.OrdinalIgnoreCase))
+                {
+                    var student = await _unitOfWork.Students.GetAsync(booking.StudentId);
+                    if (student == null || student.UserId != request.UserId)
+                        throw new UnauthorizedAccessException("You are not the student on this booking.");
+                }
+                else if (request.Role.Equals("Owner", StringComparison.OrdinalIgnoreCase))
+                {
+                    var owner = await ResolveOwnerAsync(booking);
+                    if (owner == null || owner.UserId != request.UserId)
+                        throw new UnauthorizedAccessException("You are not the landlord on this booking.");
+                }
+            }
 
             if (request.Role.Equals("Student", StringComparison.OrdinalIgnoreCase))
             {
