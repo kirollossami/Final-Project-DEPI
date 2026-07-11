@@ -56,6 +56,38 @@ namespace StudentHousingAPI.Controllers
             return File(pdfBytes, "application/pdf", $"contract-{id}.pdf");
         }
 
+        // GET api/contracts/{id}/signatures/student – download student signed PDF
+        [HttpGet("{id:guid}/signatures/student")]
+        public async Task<IActionResult> DownloadStudentSignature(Guid id)
+        {
+            var contract = await _contractService.GetContractByIdAsync(id);
+            if (contract == null) return NotFound(new { Message = "Contract not found" });
+
+            if (string.IsNullOrEmpty(contract.StudentSignedContractPath))
+                return NotFound(new { Message = "Student signature not available yet." });
+
+            var file = await _fileStorageService.GetFileAsync(contract.StudentSignedContractPath);
+            if (file == null) return NotFound(new { Message = "Signed PDF file not found." });
+
+            return File(file.Value.Content, file.Value.ContentType, $"contract_{id}_student_signed.pdf");
+        }
+
+        // GET api/contracts/{id}/signatures/landlord – download landlord signed PDF
+        [HttpGet("{id:guid}/signatures/landlord")]
+        public async Task<IActionResult> DownloadLandlordSignature(Guid id)
+        {
+            var contract = await _contractService.GetContractByIdAsync(id);
+            if (contract == null) return NotFound(new { Message = "Contract not found" });
+
+            if (string.IsNullOrEmpty(contract.LandlordSignedContractPath))
+                return NotFound(new { Message = "Landlord signature not available yet." });
+
+            var file = await _fileStorageService.GetFileAsync(contract.LandlordSignedContractPath);
+            if (file == null) return NotFound(new { Message = "Signed PDF file not found." });
+
+            return File(file.Value.Content, file.Value.ContentType, $"contract_{id}_landlord_signed.pdf");
+        }
+
         // POST api/contracts/{id}/signatures/student – student signs contract
         [HttpPost("{id:guid}/signatures/student")]
         [Authorize(Roles = "Student")]

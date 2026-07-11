@@ -98,7 +98,33 @@ public class AdminApprovalController : BaseController
     [HttpGet("pending-contracts")]
     public async Task<IActionResult> GetPendingContracts()
     {
-        var result = await _adminApprovalService.GetPendingContractsAsync();
+        var contracts = await _adminApprovalService.GetPendingContractsAsync();
+        var baseUrl = $"{Request.Scheme}://{Request.Host}";
+        var result = contracts.Select(c => new
+        {
+            c.ContractId,
+            c.BookingId,
+            c.ContractNumber,
+            c.OriginalContractPdfPath,
+            c.IsStudentSigned,
+            c.IsLandlordSigned,
+            c.IsAdminApproved,
+            c.StudentSignedAt,
+            c.LandlordSignedAt,
+            c.AdminApprovedAt,
+            c.AdminNotes,
+            c.ContractStatus,
+            c.CreatedAt,
+            StudentSignedPdfUrl = !string.IsNullOrEmpty(c.StudentSignedContractPath)
+                ? $"{baseUrl}/api/contracts/{c.ContractId}/signatures/student"
+                : null,
+            LandlordSignedPdfUrl = !string.IsNullOrEmpty(c.LandlordSignedContractPath)
+                ? $"{baseUrl}/api/contracts/{c.ContractId}/signatures/landlord"
+                : null,
+            OriginalContractPdfUrl = !string.IsNullOrEmpty(c.OriginalContractPdfPath)
+                ? $"{baseUrl}/api/contracts/{c.ContractId}/pdf"
+                : null
+        });
         return Ok(result);
     }
 
