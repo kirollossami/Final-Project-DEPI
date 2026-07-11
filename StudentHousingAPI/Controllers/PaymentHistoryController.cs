@@ -79,15 +79,23 @@ public class PaymentHistoryController : BaseController
     }
 
     /// <summary>
-    /// Get payment history for a specific payment transaction (Admin only)
+    /// Get payment history for a specific payment transaction
     /// </summary>
     [HttpGet("payment/{paymentId}")]
-    [Authorize(Roles = "Admin")]
     public async Task<IActionResult> GetPaymentTransactionHistory(Guid paymentId)
     {
         try
         {
+            var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            var isAdmin = User.IsInRole("Admin");
+
             var history = await _paymentHistoryService.GetPaymentTransactionHistoryAsync(paymentId);
+
+            if (!isAdmin)
+            {
+                history = history.Where(h => h.UserId == userId);
+            }
+
             return Ok(new
             {
                 Success = true,

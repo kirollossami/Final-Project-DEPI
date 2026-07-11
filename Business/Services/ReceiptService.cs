@@ -323,7 +323,7 @@ public class ReceiptService : IReceiptService
         PaymentMethod = receipt.PaymentMethod,
         PaymentStatus = receipt.Payment?.PaymentStatus.ToString() ?? "Unknown",
         PaymentDate = receipt.Payment?.PaymentDate,
-        ReceiptPdfUrl = receipt.ReceiptPdfUrl,
+        ReceiptPdfUrl = $"/api/Receipt/{receipt.ReceiptId}/download",
         CreatedAt = receipt.CreatedAt
     };
 

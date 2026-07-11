@@ -61,11 +61,16 @@ namespace StudentHousingAPI.Controllers
             if (dto == null || string.IsNullOrWhiteSpace(dto.SignedPdfUrl))
                 return BadRequest(new { Message = "Signed PDF URL is required." });
 
+            var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userId))
+                return Unauthorized(new { Message = "User not identified." });
+
             var request = new ContractSignatureRequest
             {
                 ContractId = id,
                 SignedPdfUrl = dto.SignedPdfUrl,
-                Role = "Student"
+                Role = "Student",
+                UserId = userId
             };
 
             var result = await _contractService.SignContractAsync(request);
@@ -80,15 +85,18 @@ namespace StudentHousingAPI.Controllers
             if (dto == null || string.IsNullOrWhiteSpace(dto.SignedPdfUrl))
                 return BadRequest(new { Message = "Signed PDF URL is required." });
 
+            var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userId))
+                return Unauthorized(new { Message = "User not identified." });
+
             var request = new ContractSignatureRequest
             {
                 ContractId = id,
                 SignedPdfUrl = dto.SignedPdfUrl,
-                Role = "Owner"
+                Role = "Owner",
+                UserId = userId
             };
 
-            // After owner signs (and student has already signed),
-            // ContractService automatically sets booking → UnderReview
             var result = await _contractService.SignContractAsync(request);
             return Ok(result);
         }
