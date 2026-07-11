@@ -15,15 +15,18 @@ namespace StudentHousingAPI.Controllers
         private readonly IContractService _contractService;
         private readonly IAdminApprovalService _adminApprovalService;
         private readonly INotificationService _notificationService;
+        private readonly IFileStorageService _fileStorageService;
 
         public ContractController(
             IContractService contractService,
             IAdminApprovalService adminApprovalService,
-            INotificationService notificationService)
+            INotificationService notificationService,
+            IFileStorageService fileStorageService)
         {
             _contractService = contractService;
             _adminApprovalService = adminApprovalService;
             _notificationService = notificationService;
+            _fileStorageService = fileStorageService;
         }
 
         // GET api/contracts/{id} – get contract details (JSON)
@@ -56,19 +59,26 @@ namespace StudentHousingAPI.Controllers
         // POST api/contracts/{id}/signatures/student – student signs contract
         [HttpPost("{id:guid}/signatures/student")]
         [Authorize(Roles = "Student")]
-        public async Task<IActionResult> UploadStudentSignature(Guid id, [FromBody] SignatureDto dto)
+        [DisableRequestSizeLimit]
+        public async Task<IActionResult> UploadStudentSignature(Guid id, IFormFile signedFile)
         {
-            if (dto == null || string.IsNullOrWhiteSpace(dto.SignedPdfUrl))
-                return BadRequest(new { Message = "Signed PDF URL is required." });
+            if (signedFile == null || signedFile.Length == 0)
+                return BadRequest(new { Message = "Signed PDF file is required." });
+
+            if (!signedFile.ContentType.Equals("application/pdf", StringComparison.OrdinalIgnoreCase))
+                return BadRequest(new { Message = "Only PDF files are allowed." });
 
             var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
             if (string.IsNullOrEmpty(userId))
                 return Unauthorized(new { Message = "User not identified." });
 
+            var fileName = $"contract_student_{id}_{Guid.NewGuid()}.pdf";
+            var filePath = await _fileStorageService.SaveFileAsync(signedFile.OpenReadStream(), fileName, "signatures");
+
             var request = new ContractSignatureRequest
             {
                 ContractId = id,
-                SignedPdfUrl = dto.SignedPdfUrl,
+                SignedPdfUrl = filePath,
                 Role = "Student",
                 UserId = userId
             };
@@ -80,19 +90,26 @@ namespace StudentHousingAPI.Controllers
         // POST api/contracts/{id}/signatures/owner – landlord signs contract
         [HttpPost("{id:guid}/signatures/owner")]
         [Authorize(Roles = "LandLord")]
-        public async Task<IActionResult> UploadOwnerSignature(Guid id, [FromBody] SignatureDto dto)
+        [DisableRequestSizeLimit]
+        public async Task<IActionResult> UploadOwnerSignature(Guid id, IFormFile signedFile)
         {
-            if (dto == null || string.IsNullOrWhiteSpace(dto.SignedPdfUrl))
-                return BadRequest(new { Message = "Signed PDF URL is required." });
+            if (signedFile == null || signedFile.Length == 0)
+                return BadRequest(new { Message = "Signed PDF file is required." });
+
+            if (!signedFile.ContentType.Equals("application/pdf", StringComparison.OrdinalIgnoreCase))
+                return BadRequest(new { Message = "Only PDF files are allowed." });
 
             var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
             if (string.IsNullOrEmpty(userId))
                 return Unauthorized(new { Message = "User not identified." });
 
+            var fileName = $"contract_landlord_{id}_{Guid.NewGuid()}.pdf";
+            var filePath = await _fileStorageService.SaveFileAsync(signedFile.OpenReadStream(), fileName, "signatures");
+
             var request = new ContractSignatureRequest
             {
                 ContractId = id,
-                SignedPdfUrl = dto.SignedPdfUrl,
+                SignedPdfUrl = filePath,
                 Role = "Owner",
                 UserId = userId
             };
@@ -149,11 +166,6 @@ namespace StudentHousingAPI.Controllers
         }
 
         // ── scoped DTOs ───────────────────────────────────────────────────────
-        public class SignatureDto
-        {
-            public string SignedPdfUrl { get; set; } = string.Empty;
-        }
-
         public class AdminActionDto
         {
             public string? AdminUserId { get; set; }
