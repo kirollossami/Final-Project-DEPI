@@ -2,10 +2,14 @@ using Business.DTOs.Requests;
 using Business.DTOs.Responses;
 using Business.Interfaces;
 using Business.Settings;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Configuration;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Net.Http.Headers;
 
 namespace Business.Services;
 
@@ -13,273 +17,443 @@ public class PaymobService : IPaymobService
 {
     private readonly PaymobSettings _settings;
     private readonly HttpClient _httpClient;
-    private string? _authToken;
+    private readonly ILogger<PaymobService> _logger;
+    private readonly IConfiguration _config;
 
-    public PaymobService(IOptions<PaymobSettings> settings, HttpClient httpClient)
+    public PaymobService(IOptions<PaymobSettings> settings, HttpClient httpClient, ILogger<PaymobService> logger, IConfiguration config)
     {
         _settings = settings.Value;
         _httpClient = httpClient;
-        _httpClient.BaseAddress = new Uri(_settings.BaseUrl);
+        _logger = logger;
+        _config = config;
+        // Do NOT set BaseAddress here — we use absolute URIs per request
     }
 
-    public async Task<string> AuthenticateAsync()
-    {
-        var authRequest = new
-        {
-            api_key = _settings.ApiKey
-        };
+    // Legacy stubs — kept for interface compatibility
+    public Task<string> AuthenticateAsync() => Task.FromResult(string.Empty);
+    public Task<PaymobPaymentResponse> CreateOrderAsync(decimal amount, string currency = "EGP")
+        => Task.FromResult(new PaymobPaymentResponse { Success = false, Message = "Use InitiatePaymentAsync" });
+    public Task<PaymobPaymentResponse> CreatePaymentKeyAsync(string orderId, decimal amount, PaymobPaymentRequest request)
+        => Task.FromResult(new PaymobPaymentResponse { Success = false, Message = "Use InitiatePaymentAsync" });
 
-        var content = new StringContent(
-            JsonSerializer.Serialize(authRequest),
-            Encoding.UTF8,
-            "application/json");
-
-        var response = await _httpClient.PostAsync("/auth/tokens", content);
-        response.EnsureSuccessStatusCode();
-
-        var responseContent = await response.Content.ReadAsStringAsync();
-        var authResponse = JsonSerializer.Deserialize<JsonElement>(responseContent);
-        
-        _authToken = authResponse.GetProperty("token").GetString();
-        return _authToken!;
-    }
-
-    public async Task<PaymobPaymentResponse> CreateOrderAsync(decimal amount, string currency = "EGP")
-    {
-        if (string.IsNullOrEmpty(_authToken))
-        {
-            await AuthenticateAsync();
-        }
-
-        var orderRequest = new
-        {
-            auth_token = _authToken,
-            delivery_needed = false,
-            amount_cents = (long)(amount * 100),
-            currency = currency,
-            merchant_order_id = Guid.NewGuid().ToString()
-        };
-
-        var content = new StringContent(
-            JsonSerializer.Serialize(orderRequest),
-            Encoding.UTF8,
-            "application/json");
-
-        var response = await _httpClient.PostAsync("/ecommerce/orders", content);
-        var responseContent = await response.Content.ReadAsStringAsync();
-
-        if (!response.IsSuccessStatusCode)
-        {
-            return new PaymobPaymentResponse
-            {
-                Success = false,
-                Message = $"Failed to create order: {responseContent}",
-                RawResponse = responseContent
-            };
-        }
-
-        var orderResponse = JsonSerializer.Deserialize<JsonElement>(responseContent);
-        
-        return new PaymobPaymentResponse
-        {
-            Success = true,
-            OrderId = orderResponse.GetProperty("id").GetString(),
-            RawResponse = responseContent
-        };
-    }
-
-    public async Task<PaymobPaymentResponse> CreatePaymentKeyAsync(
-        string orderId,
-        decimal amount,
-        PaymobPaymentRequest request)
-    {
-        if (string.IsNullOrEmpty(_authToken))
-        {
-            await AuthenticateAsync();
-        }
-
-        var billingData = new
-        {
-            first_name = request.CustomerName.Split(' ')[0],
-            last_name = request.CustomerName.Split(' ').Length > 1 
-                ? string.Join(" ", request.CustomerName.Split(' ').Skip(1)) 
-                : "",
-            email = request.CustomerEmail,
-            phone_number = request.CustomerPhone,
-            apartment = "NA",
-            floor = "NA",
-            street = "NA",
-            building = "NA",
-            shipping_method = "NA",
-            postal_code = "NA",
-            city = "Cairo",
-            country = "EG",
-            state = "Cairo"
-        };
-
-        var paymentKeyRequest = new
-        {
-            auth_token = _authToken,
-            amount_cents = (long)(amount * 100),
-            expiration = 3600,
-            order_id = orderId,
-            billing_data = billingData,
-            currency = request.Currency,
-            integration_id = _settings.IntegrationId,
-            lock_order_when_paid = false
-        };
-
-        var content = new StringContent(
-            JsonSerializer.Serialize(paymentKeyRequest),
-            Encoding.UTF8,
-            "application/json");
-
-        var response = await _httpClient.PostAsync("/acceptance/payment_keys", content);
-        var responseContent = await response.Content.ReadAsStringAsync();
-
-        if (!response.IsSuccessStatusCode)
-        {
-            return new PaymobPaymentResponse
-            {
-                Success = false,
-                Message = $"Failed to create payment key: {responseContent}",
-                RawResponse = responseContent
-            };
-        }
-
-        var paymentKeyResponse = JsonSerializer.Deserialize<JsonElement>(responseContent);
-        var paymentToken = paymentKeyResponse.GetProperty("token").GetString();
-
-        var paymentUrl = $"https://accept.paymob.com/api/acceptance/iframes/{_settings.IFrameId}?payment_token={paymentToken}";
-
-        return new PaymobPaymentResponse
-        {
-            Success = true,
-            OrderId = orderId,
-            PaymentToken = paymentToken,
-            PaymentUrl = paymentUrl,
-            RawResponse = responseContent
-        };
-    }
-
+    /// <summary>
+    /// Initiates payment using Paymob Intention API (v1).
+    /// Docs: https://developers.paymob.com/egypt/docs/intention-api
+    /// </summary>
     public async Task<PaymobPaymentResponse> InitiatePaymentAsync(PaymobPaymentRequest request)
     {
         try
         {
-            // Step 1: Create Order
-            var orderResponse = await CreateOrderAsync(request.Amount, request.Currency);
+            _logger?.LogInformation("Paymob: _settings.ApiKey from IOptions (length: {Length}, starts with: {Prefix})", 
+                _settings.ApiKey?.Length ?? 0, 
+                _settings.ApiKey?.Length > 10 ? _settings.ApiKey.Substring(0, 10) + "..." : "null/empty");
             
-            if (!orderResponse.Success || string.IsNullOrEmpty(orderResponse.OrderId))
+            var effectiveApiKey = ResolveApiKey();
+            _logger?.LogInformation("Paymob: Resolved API key (length: {Length}, starts with: {Prefix})", 
+                effectiveApiKey?.Length ?? 0, 
+                effectiveApiKey?.Length > 10 ? effectiveApiKey.Substring(0, 10) + "..." : "null/empty");
+            
+            if (string.IsNullOrWhiteSpace(effectiveApiKey))
             {
-                return orderResponse;
+                _logger?.LogError("Paymob Secret Key is not configured. Resolved API key is null or empty.");
+                return new PaymobPaymentResponse { Success = false, Message = "Paymob Secret Key is not configured" };
             }
+            _logger?.LogInformation("Paymob: Using API key starting with: {Prefix}", effectiveApiKey.Substring(0, Math.Min(8, effectiveApiKey.Length)) + "...");
 
-            // Step 2: Create Payment Key
-            var paymentKeyResponse = await CreatePaymentKeyAsync(
-                orderResponse.OrderId,
-                request.Amount,
-                request);
+            if (string.IsNullOrWhiteSpace(_settings.CardIntegrationId) ||
+                !int.TryParse(_settings.CardIntegrationId, out var integrationId))
+                return new PaymobPaymentResponse { Success = false, Message = "Paymob CardIntegrationId is not configured or invalid" };
 
-            return paymentKeyResponse;
+            var firstName = request.CustomerName?.Split(' ').FirstOrDefault() ?? "Customer";
+            var lastName = request.CustomerName?.Contains(' ') == true
+                ? string.Join(" ", request.CustomerName.Split(' ').Skip(1))
+                : "NA";
+
+            var intentionBody = new
+            {
+                amount = (long)(request.Amount * 100),
+                currency = request.Currency ?? "EGP",
+                payment_methods = new[] { integrationId },
+                items = new[]
+                {
+                    new
+                    {
+                        name = request.Description ?? "Booking Payment",
+                        amount = (long)(request.Amount * 100),
+                        description = request.Description ?? "Housing Booking Payment",
+                        quantity = 1
+                    }
+                },
+                billing_data = new
+                {
+                    first_name = firstName,
+                    last_name = lastName,
+                    email = request.CustomerEmail,
+                    phone_number = request.CustomerPhone,
+                    apartment = "NA", floor = "NA", street = "NA", building = "NA",
+                    shipping_method = "NA", postal_code = "NA",
+                    city = "Cairo", country = "EG", state = "Cairo"
+                },
+                customer = new
+                {
+                    first_name = firstName,
+                    last_name = lastName,
+                    email = request.CustomerEmail,
+                    phone_number = request.CustomerPhone
+                },
+                extras = request.Metadata ?? new Dictionary<string, string>()
+            };
+
+            var json = JsonSerializer.Serialize(intentionBody);
+            var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+            // Use per-request message to avoid DefaultRequestHeaders concurrency issues
+            // Build intention URL on the authority (host) because the intention API sits at the root
+            // e.g. https://accept.paymob.com/v1/intention/ while some other endpoints use /api/*
+            // Resolve current settings from configuration to handle runtime overrides
+            var currentBaseUrl = ResolveSetting("BaseUrl") ?? _settings.BaseUrl;
+            var baseAuthority = new Uri(currentBaseUrl).GetLeftPart(UriPartial.Authority);
+            var intentionUrl = $"{baseAuthority.TrimEnd('/')}/v1/intention/";
+            using var requestMessage = new HttpRequestMessage(HttpMethod.Post, intentionUrl);
+            requestMessage.Headers.Authorization = new AuthenticationHeaderValue("Token", effectiveApiKey);
+            requestMessage.Content = content;
+
+            // Log minimal diagnostic information without revealing the secret key
+            var mask = effectiveApiKey.Length > 8 ? effectiveApiKey.Substring(0, 8) + "..." : "***";
+            _logger?.LogInformation("Paymob: POST {Url}. Authorization header: {Auth}", intentionUrl, $"Token {mask}");
+
+            var response = await _httpClient.SendAsync(requestMessage);
+            var responseContent = await response.Content.ReadAsStringAsync();
+
+            if (!response.IsSuccessStatusCode)
+                return new PaymobPaymentResponse
+                {
+                    Success = false,
+                    Message = $"Paymob intention failed ({(int)response.StatusCode}): {responseContent}",
+                    RawResponse = responseContent
+                };
+
+            var result = JsonSerializer.Deserialize<JsonElement>(responseContent);
+
+            var clientSecret = result.TryGetProperty("client_secret", out var cs) ? cs.GetString() : null;
+            var intentionId = result.TryGetProperty("id", out var id) ? id.GetString() : null;
+
+            if (string.IsNullOrEmpty(clientSecret))
+                return new PaymobPaymentResponse
+                {
+                    Success = false,
+                    Message = $"Paymob returned no client_secret. Response: {responseContent}",
+                    RawResponse = responseContent
+                };
+
+            // Hosted checkout URL using Public Key + client_secret
+            var publicKey = ResolveSetting("PublicKey") ?? _settings.PublicKey;
+            if (string.IsNullOrEmpty(publicKey) && !string.IsNullOrEmpty(effectiveApiKey) && effectiveApiKey.Contains("_sk_"))
+                publicKey = effectiveApiKey.Replace("_sk_", "_pk_");
+            var paymentUrl = $"https://accept.paymob.com/unifiedcheckout/?publicKey={publicKey}&clientSecret={clientSecret}";
+
+            return new PaymobPaymentResponse
+            {
+                Success = true,
+                OrderId = intentionId,
+                IntentionId = intentionId,
+                PaymentToken = clientSecret,
+                PaymentUrl = paymentUrl,
+                RawResponse = responseContent
+            };
         }
         catch (Exception ex)
         {
-            return new PaymobPaymentResponse
-            {
-                Success = false,
-                Message = $"Payment initiation failed: {ex.Message}"
-            };
+            return new PaymobPaymentResponse { Success = false, Message = $"Payment initiation failed: {ex.Message}" };
         }
     }
 
     public async Task<bool> ValidateCallbackHmacAsync(PaymobCallbackResponse callback)
     {
-        if (callback?.Obj?.TransactionData?.Hmac == null)
-        {
-            return false;
-        }
+        if (callback?.Obj?.TransactionData?.Hmac == null) return false;
 
-        var receivedHmac = callback.Obj.TransactionData.Hmac;
-        var transactionData = callback.Obj.TransactionData;
+        var td = callback.Obj.TransactionData;
+        var concat = $"{callback.Obj.Id}{callback.Obj.OrderId}{td.Amount}{td.Currency}{td.Success}{td.IntegrationId}";
 
-        // Build the string for HMAC calculation
-        var concatString = new StringBuilder();
-        concatString.Append(callback.Obj.Id);
-        concatString.Append(callback.Obj.OrderId);
-        concatString.Append(transactionData.Amount);
-        concatString.Append(transactionData.Currency);
-        concatString.Append(transactionData.Success);
-        concatString.Append(transactionData.IntegrationId);
-
-        // Calculate HMAC
-        var secretBytes = Encoding.UTF8.GetBytes(_settings.HmacSecret);
-        var stringBytes = Encoding.UTF8.GetBytes(concatString.ToString());
-        
-        using var hmac = new HMACSHA512(secretBytes);
-        var computedHash = hmac.ComputeHash(stringBytes);
-        var computedHmac = BitConverter.ToString(computedHash).Replace("-", "").ToLower();
-
-        return computedHmac == receivedHmac.ToLower();
+        using var hmac = new HMACSHA512(Encoding.UTF8.GetBytes(_settings.HmacSecret));
+        var computed = BitConverter.ToString(hmac.ComputeHash(Encoding.UTF8.GetBytes(concat))).Replace("-", "").ToLower();
+        return computed == td.Hmac?.ToLower();
     }
 
     public async Task<PaymobPaymentResponse> ProcessPaymentCallbackAsync(PaymobCallbackResponse callback)
     {
         try
         {
-            // Validate HMAC
             if (!await ValidateCallbackHmacAsync(callback))
-            {
-                return new PaymobPaymentResponse
-                {
-                    Success = false,
-                    Message = "Invalid HMAC signature"
-                };
-            }
+                return new PaymobPaymentResponse { Success = false, Message = "Invalid HMAC signature" };
 
             var isSuccess = callback.Obj?.TransactionData?.Success == "true";
-            var transactionId = callback.Obj?.TransactionData?.Id;
-            var orderId = callback.Obj?.OrderId;
-
             return new PaymobPaymentResponse
             {
                 Success = isSuccess,
-                OrderId = orderId,
-                PaymentToken = transactionId,
-                Message = isSuccess ? "Payment completed successfully" : "Payment failed",
+                OrderId = callback.Obj?.OrderId,
+                PaymentToken = callback.Obj?.TransactionData?.Id,
+                Message = isSuccess ? "Payment completed" : "Payment failed",
                 RawResponse = JsonSerializer.Serialize(callback)
             };
         }
         catch (Exception ex)
         {
-            return new PaymobPaymentResponse
-            {
-                Success = false,
-                Message = $"Callback processing failed: {ex.Message}"
-            };
+            return new PaymobPaymentResponse { Success = false, Message = $"Callback error: {ex.Message}" };
         }
     }
 
     public async Task<bool> RefundTransactionAsync(string transactionId, decimal amount)
     {
-        if (string.IsNullOrEmpty(_authToken))
+        var refundRequest = new { transaction_id = transactionId, amount_cents = (long)(amount * 100) };
+        var content = new StringContent(JsonSerializer.Serialize(refundRequest), Encoding.UTF8, "application/json");
+        
+        var currentBase = ResolveSetting("BaseUrl") ?? _settings.BaseUrl;
+        var baseAuthority = new Uri(currentBase).GetLeftPart(UriPartial.Authority);
+        // Ensure API base contains /api segment as required by Paymob for certain endpoints
+        string apiBase;
+        if (currentBase.TrimEnd('/').EndsWith("/api", StringComparison.OrdinalIgnoreCase) || currentBase.IndexOf("/api", StringComparison.OrdinalIgnoreCase) >= 0)
         {
-            await AuthenticateAsync();
+            apiBase = currentBase.TrimEnd('/');
+        }
+        else
+        {
+            apiBase = baseAuthority.TrimEnd('/') + "/api";
         }
 
-        var refundRequest = new
-        {
-            auth_token = _authToken,
-            transaction_id = transactionId,
-            amount_cents = (long)(amount * 100)
-        };
-
-        var content = new StringContent(
-            JsonSerializer.Serialize(refundRequest),
-            Encoding.UTF8,
-            "application/json");
-
-        var response = await _httpClient.PostAsync("/acceptance/refund", content);
+        var refundUrl = $"{apiBase}/acceptance/void_refund/refund";
+        using var requestMessage = new HttpRequestMessage(HttpMethod.Post, refundUrl);
+        var effectiveApiKey = ResolveApiKey();
+        requestMessage.Headers.TryAddWithoutValidation("Authorization", $"Token {effectiveApiKey}");
+        requestMessage.Content = content;
         
+        var response = await _httpClient.SendAsync(requestMessage);
         return response.IsSuccessStatusCode;
+    }
+
+    private string? ResolveApiKey()
+    {
+        // Read fresh values from configuration each time to avoid stale snapshots
+        try
+        {
+            var section = _config?.GetSection(PaymobSettings.SectionName);
+            var apiKey = section?["ApiKey"];
+            if (!string.IsNullOrWhiteSpace(apiKey))
+            {
+                _logger?.LogInformation("Paymob: API key found in configuration section 'ApiKey' (attempting decode if needed).");
+                // If it looks like base64, try to decode and extract real secret
+                bool looksBase64 = apiKey.Length % 4 == 0 && System.Text.RegularExpressions.Regex.IsMatch(apiKey, "^[A-Za-z0-9+/=\\r\\n]+$");
+                if (looksBase64)
+                {
+                    try
+                    {
+                        var decoded = Encoding.UTF8.GetString(Convert.FromBase64String(apiKey));
+                        if (!string.IsNullOrWhiteSpace(decoded) && decoded.Contains("egy_sk_"))
+                        {
+                            _logger?.LogInformation("Paymob: decoded ApiKey from base64 and found secret prefix");
+                            return decoded;
+                        }
+                    }
+                    catch
+                    {
+                        // ignore
+                    }
+                }
+
+                // If it already looks like the secret, return as-is; otherwise return the provided value
+                if (apiKey.StartsWith("egy_sk_") || apiKey.StartsWith("sk_"))
+                    return apiKey;
+
+                return apiKey;
+            }
+
+            var secretFromConfig = section?["SecretKey"] ?? _config?["Paymob:SecretKey"];
+            if (!string.IsNullOrWhiteSpace(secretFromConfig))
+            {
+                _logger?.LogInformation("Paymob: API key resolved from configuration section 'SecretKey'.");
+                return secretFromConfig;
+            }
+
+            // Environment variables fallback
+            var env = Environment.GetEnvironmentVariable("PAYMOB_SECRET")
+                   ?? Environment.GetEnvironmentVariable("PAYMOB_APIKEY")
+                   ?? Environment.GetEnvironmentVariable("PAYMOB_API_KEY")
+                   ?? _config?["PAYMOB_SECRET"];
+            if (!string.IsNullOrWhiteSpace(env))
+            {
+                _logger?.LogInformation("Paymob: API key resolved from environment variable.");
+                return env;
+            }
+
+            // Fallback to settings object (injected via IOptions) - loaded at startup
+            if (!string.IsNullOrWhiteSpace(_settings.ApiKey))
+            {
+                _logger?.LogInformation("Paymob: API key resolved from IOptions settings object.");
+                // If it's a base64 encoded value, try to decode it
+                if (!_settings.ApiKey.StartsWith("egy_sk_"))
+                {
+                    try
+                    {
+                        var decoded = Encoding.UTF8.GetString(Convert.FromBase64String(_settings.ApiKey));
+                        if (!string.IsNullOrWhiteSpace(decoded) && decoded.StartsWith("egy_sk_"))
+                        {
+                            _logger?.LogInformation("Paymob: API key was base64 decoded.");
+                            return decoded;
+                        }
+                    }
+                    catch
+                    {
+                        // Not base64, return as-is
+                    }
+                }
+                return _settings.ApiKey;
+            }
+            
+            _logger?.LogError("Paymob: Could not resolve API key from any source.");
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "Paymob: Error resolving API key.");
+        }
+
+        return null;
+    }
+
+    private string? ResolveSetting(string key)
+    {
+        try
+        {
+            var section = _config?.GetSection(PaymobSettings.SectionName);
+            var val = section?[key];
+            if (!string.IsNullOrWhiteSpace(val))
+                return val;
+            return _config?["Paymob:" + key];
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public async Task<PaymobAuthResponse> GetBearerTokenAsync()
+    {
+        try
+        {
+            var effectiveApiKey = ResolveApiKey();
+            if (string.IsNullOrWhiteSpace(effectiveApiKey))
+                return new PaymobAuthResponse { Success = false, Message = "API key not configured" };
+
+            var currentBase = ResolveSetting("BaseUrl") ?? _settings.BaseUrl;
+            var baseAuthority = new Uri(currentBase).GetLeftPart(UriPartial.Authority);
+            var authUrl = $"{baseAuthority}/api/auth/tokens";
+
+            var authBody = new { api_key = effectiveApiKey };
+            var content = new StringContent(JsonSerializer.Serialize(authBody), Encoding.UTF8, "application/json");
+
+            using var requestMessage = new HttpRequestMessage(HttpMethod.Post, authUrl);
+            requestMessage.Content = content;
+
+            var response = await _httpClient.SendAsync(requestMessage);
+            var responseContent = await response.Content.ReadAsStringAsync();
+
+            if (!response.IsSuccessStatusCode)
+                return new PaymobAuthResponse { Success = false, Message = $"Auth failed: {responseContent}" };
+
+            var result = JsonSerializer.Deserialize<JsonElement>(responseContent);
+            var token = result.TryGetProperty("token", out var t) ? t.GetString() : null;
+
+            return new PaymobAuthResponse { Success = true, Token = token };
+        }
+        catch (Exception ex)
+        {
+            return new PaymobAuthResponse { Success = false, Message = $"Auth error: {ex.Message}" };
+        }
+    }
+
+    public async Task<JsonElement?> GetTransactionDetailsAsync(string transactionId)
+    {
+        try
+        {
+            var authResponse = await GetBearerTokenAsync();
+            if (!authResponse.Success || string.IsNullOrEmpty(authResponse.Token))
+                return null;
+
+            var currentBase = ResolveSetting("BaseUrl") ?? _settings.BaseUrl;
+            var baseAuthority = new Uri(currentBase).GetLeftPart(UriPartial.Authority);
+            var url = $"{baseAuthority}/api/acceptance/transactions/{transactionId}";
+
+            using var requestMessage = new HttpRequestMessage(HttpMethod.Get, url);
+            requestMessage.Headers.Authorization = new AuthenticationHeaderValue("Bearer", authResponse.Token);
+
+            var response = await _httpClient.SendAsync(requestMessage);
+            var responseContent = await response.Content.ReadAsStringAsync();
+
+            if (!response.IsSuccessStatusCode)
+                return null;
+
+            return JsonSerializer.Deserialize<JsonElement>(responseContent);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public async Task<JsonElement?> GetTransactionDetailsJsonAsync(string transactionId)
+    {
+        try
+        {
+            var authResponse = await GetBearerTokenAsync();
+            if (!authResponse.Success || string.IsNullOrEmpty(authResponse.Token))
+                return null;
+
+            var currentBase = ResolveSetting("BaseUrl") ?? _settings.BaseUrl;
+            var baseAuthority = new Uri(currentBase).GetLeftPart(UriPartial.Authority);
+            var url = $"{baseAuthority}/api/acceptance/transactions/{transactionId}";
+
+            using var requestMessage = new HttpRequestMessage(HttpMethod.Get, url);
+            requestMessage.Headers.Authorization = new AuthenticationHeaderValue("Bearer", authResponse.Token);
+
+            var response = await _httpClient.SendAsync(requestMessage);
+            var responseContent = await response.Content.ReadAsStringAsync();
+
+            if (!response.IsSuccessStatusCode)
+                return null;
+
+            return JsonSerializer.Deserialize<JsonElement>(responseContent);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public async Task<JsonElement?> GetIntentionDetailsAsync(string intentionId)
+    {
+        try
+        {
+            var effectiveApiKey = ResolveApiKey();
+            if (string.IsNullOrWhiteSpace(effectiveApiKey))
+                return null;
+
+            var currentBase = ResolveSetting("BaseUrl") ?? _settings.BaseUrl;
+            var baseAuthority = new Uri(currentBase).GetLeftPart(UriPartial.Authority);
+            var url = $"{baseAuthority}/v1/intention/{intentionId}";
+
+            using var requestMessage = new HttpRequestMessage(HttpMethod.Get, url);
+            requestMessage.Headers.Authorization = new AuthenticationHeaderValue("Token", effectiveApiKey);
+
+            var response = await _httpClient.SendAsync(requestMessage);
+            var responseContent = await response.Content.ReadAsStringAsync();
+
+            if (!response.IsSuccessStatusCode)
+                return null;
+
+            return JsonSerializer.Deserialize<JsonElement>(responseContent);
+        }
+        catch
+        {
+            return null;
+        }
     }
 }

@@ -1,6 +1,7 @@
 using Business.DTOs.Requests;
 using Business.DTOs.Responses;
 using Business.Interfaces;
+using Domain.Enums;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.Google;
@@ -15,11 +16,13 @@ public class AccountController : Controller
 {
     private readonly IAuthService authService;
     private readonly IConfiguration _configuration;
+    private readonly INotificationService _notificationService;
 
-    public AccountController(IAuthService authService, IConfiguration configuration)
+    public AccountController(IAuthService authService, IConfiguration configuration, INotificationService notificationService)
     {
         this.authService = authService;
         _configuration = configuration;
+        _notificationService = notificationService;
     }
 
     [HttpPost("login")]
@@ -53,7 +56,7 @@ public class AccountController : Controller
         else
         {
             var allowedOrigins = _configuration.GetSection("AllowedOrigins").Get<string[]>();
-            var defaultFrontend = allowedOrigins?.FirstOrDefault() ?? "https://unistay-shbs.vercel.app/";
+            var defaultFrontend = allowedOrigins?.FirstOrDefault() ?? "http://localhost:4200";
             properties.Items["returnUrl"] = defaultFrontend;
         }
 
@@ -70,7 +73,7 @@ public class AccountController : Controller
         bool isBrowserNavigation = acceptHeader.Contains("text/html");
 
         var allowedOrigins = _configuration.GetSection("AllowedOrigins").Get<string[]>();
-        var frontendUrl = allowedOrigins?.FirstOrDefault() ?? "https://unistay-shbs.vercel.app/";
+        var frontendUrl = allowedOrigins?.FirstOrDefault() ?? "http://localhost:4200";
         frontendUrl = frontendUrl.TrimEnd('/');
 
         // Determine where to redirect back on success or error
@@ -178,6 +181,7 @@ public class AccountController : Controller
         if (!response.Success)
             return BadRequest(response);
 
+        try { await _notificationService.SendNotificationToRoleAsync("Admin", $"A new student has registered: {request.Email}", NotificationTypes.NewRegistration); } catch { }
         return Ok(response);
     }
 
@@ -190,6 +194,7 @@ public class AccountController : Controller
         if (!response.Success)
             return BadRequest(response);
 
+        try { await _notificationService.SendNotificationToRoleAsync("Admin", $"A new landlord has registered: {request.Email}", NotificationTypes.NewRegistration); } catch { }
         return Ok(response);
     }
 
@@ -313,7 +318,7 @@ public class AccountController : Controller
 
         if (Url.IsLocalUrl(url)) return true;
 
-        var allowedOrigins = _configuration.GetSection("AllowedOrigins").Get<string[]>() ?? new[] { "https://unistay-shbs.vercel.app/" };
+        var allowedOrigins = _configuration.GetSection("AllowedOrigins").Get<string[]>() ?? new[] { "http://localhost:4200" };
         if (Uri.TryCreate(url, UriKind.Absolute, out var uri))
         {
             var origin = $"{uri.Scheme}://{uri.Authority}";

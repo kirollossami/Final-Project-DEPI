@@ -1,8 +1,10 @@
 using Business.DTOs.Responses;
 using Business.Interfaces;
 using Domain.Entities;
+using Domain.Enums;
 using Infrastructure.Repositories;
 using Infrastructure.Repositories.Base;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 
 namespace Business.Services;
@@ -13,17 +15,23 @@ public class ChatService : IChatService
     private readonly IBaseRepository<Message> _messageRepository;
     private readonly IBookingRepository _bookingRepository;
     private readonly IHousingUnitRepository _housingUnitRepository;
+    private readonly UserManager<User> _userManager;
+    private readonly INotificationService _notificationService;
 
     public ChatService(
         IBaseRepository<Conversation> conversationRepository,
         IBaseRepository<Message> messageRepository,
         IBookingRepository bookingRepository,
-        IHousingUnitRepository housingUnitRepository)
+        IHousingUnitRepository housingUnitRepository,
+        UserManager<User> userManager,
+        INotificationService notificationService)
     {
         _conversationRepository = conversationRepository;
         _messageRepository = messageRepository;
         _bookingRepository = bookingRepository;
         _housingUnitRepository = housingUnitRepository;
+        _userManager = userManager;
+        _notificationService = notificationService;
     }
 
     public async Task<ConversationResponse> GetOrCreateConversationAsync(Guid bookingId, string userId)
@@ -66,6 +74,20 @@ public class ChatService : IChatService
         var housingUnitId = booking.HousingUnitId
             ?? booking.Room?.HousingUnitId
             ?? booking.Bed?.Room?.HousingUnitId;
+
+        var preBookingConversation = await _conversationRepository.GetAll()
+            .FirstOrDefaultAsync(c =>
+                c.HousingUnitId == housingUnitId &&
+                c.StudentUserId == booking.Student.UserId &&
+                c.BookingId == null);
+
+        if (preBookingConversation != null)
+        {
+            preBookingConversation.BookingId = bookingId;
+            await _conversationRepository.Update(preBookingConversation);
+            await _conversationRepository.CommitAsync();
+            return MapConversation(preBookingConversation);
+        }
 
         conversation = new Conversation
         {
@@ -196,6 +218,26 @@ public class ChatService : IChatService
 
         await _messageRepository.CommitAsync();
 
+        try
+        {
+            var convo = await _conversationRepository.GetAsync(conversationId);
+            if (convo != null)
+            {
+                var recipientId = convo.StudentUserId == senderId
+                    ? convo.LandLordUserId
+                    : convo.StudentUserId;
+
+                var sender = await _userManager.FindByIdAsync(senderId);
+                var senderName = sender?.UserName ?? sender?.Email ?? "Someone";
+
+                await _notificationService.SendRealTimeNotificationAsync(
+                    recipientId,
+                    $"You have a new message from {senderName}.",
+                    NotificationTypes.NewMessageReceived);
+            }
+        }
+        catch { }
+
         return new MessageResponse
         {
             MessageId = message.MessageId,
@@ -227,6 +269,59 @@ public class ChatService : IChatService
         {
             await _messageRepository.CommitAsync();
         }
+    }
+
+    public async Task<List<ConversationResponse>> GetUserConversationsAsync(string userId)
+    {
+        var conversationIds = await _conversationRepository.GetAll()
+            .Where(c => c.StudentUserId == userId || c.LandLordUserId == userId)
+            .OrderByDescending(c => c.UpdatedAt ?? c.CreatedAt)
+            .Select(c => c.ConversationId)
+            .ToListAsync();
+
+        if (conversationIds.Count == 0)
+            return new List<ConversationResponse>();
+
+        var conversations = await _conversationRepository.GetAll()
+            .Where(c => conversationIds.Contains(c.ConversationId))
+            .ToListAsync();
+
+        var ordered = conversationIds
+            .Select(id => conversations.First(c => c.ConversationId == id))
+            .ToList();
+
+        var userIds = ordered
+            .SelectMany(c => new[] { c.StudentUserId, c.LandLordUserId })
+            .Distinct()
+            .ToList();
+
+        var users = await _userManager.Users
+            .Where(u => userIds.Contains(u.Id))
+            .ToDictionaryAsync(u => u.Id, u => u.UserName ?? u.Email ?? "Unknown");
+
+        var lastMessages = await _messageRepository.GetAll()
+            .Where(m => conversationIds.Contains(m.ConversationId))
+            .GroupBy(m => m.ConversationId)
+            .Select(g => g.OrderByDescending(m => m.SentAt).First())
+            .ToDictionaryAsync(m => m.ConversationId);
+
+        return ordered.Select(c =>
+        {
+            var last = lastMessages.GetValueOrDefault(c.ConversationId);
+            return new ConversationResponse
+            {
+                ConversationId = c.ConversationId,
+                BookingId = c.BookingId,
+                HousingUnitId = c.HousingUnitId,
+                StudentUserId = c.StudentUserId,
+                LandLordUserId = c.LandLordUserId,
+                StudentName = users.GetValueOrDefault(c.StudentUserId),
+                LandlordName = users.GetValueOrDefault(c.LandLordUserId),
+                LastMessage = last?.Content,
+                LastMessageAt = last?.SentAt,
+                CreatedAt = c.CreatedAt
+            };
+        }).ToList();
     }
 
     public async Task<bool> IsParticipantAsync(Guid conversationId, string userId)

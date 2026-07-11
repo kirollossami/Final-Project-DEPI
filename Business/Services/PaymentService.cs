@@ -120,7 +120,7 @@ public class PaymentService : IPaymentService
             payment.TransactionId = request.TransactionId;
         }
 
-        await _paymentRepository.Delete(payment);
+        await _paymentRepository.Update(payment);
         await _paymentRepository.CommitAsync();
 
         return new PaymentResponse

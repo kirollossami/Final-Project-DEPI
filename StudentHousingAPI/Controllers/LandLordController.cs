@@ -2,6 +2,7 @@ using Business.DTOs.Requests;
 using Business.DTOs.Responses;
 using Business.Interfaces;
 using Domain.Enums;
+using Infrastructure.Repositories.Base;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -14,13 +15,19 @@ public class LandLordController : BaseController
 {
     private readonly ILandLordService _landLordService;
     private readonly IBookingService _bookingService;
+    private readonly INotificationService _notificationService;
+    private readonly IUnitOfWork _unitOfWork;
 
     public LandLordController(
         ILandLordService landLordService,
-        IBookingService bookingService)
+        IBookingService bookingService,
+        INotificationService notificationService,
+        IUnitOfWork unitOfWork)
     {
         _landLordService = landLordService;
         _bookingService = bookingService;
+        _notificationService = notificationService;
+        _unitOfWork = unitOfWork;
     }
 
     [HttpGet("GetById/{id}")]
@@ -64,6 +71,7 @@ public class LandLordController : BaseController
         var result = await _landLordService.UpdateLandLordAsync(request);
         if (result == null)
             return NotFound();
+        try { await _notificationService.SendRealTimeNotificationAsync(GetLoggedId(), "Your profile has been updated.", NotificationTypes.ProfileUpdated); } catch { }
         return Ok(result);
     }
 
@@ -73,6 +81,7 @@ public class LandLordController : BaseController
     {
         var userId = GetLoggedId();
         await _landLordService.ChangePasswordAsync(userId, request);
+        try { await _notificationService.SendRealTimeNotificationAsync(userId, "Your password has been changed.", NotificationTypes.PasswordChanged); } catch { }
         return Ok();
     }
 
@@ -95,6 +104,7 @@ public class LandLordController : BaseController
         if (result == null)
             return BadRequest(new { Message = "Failed to upload National ID." });
 
+        try { await _notificationService.SendNotificationToRoleAsync("Admin", "A landlord has uploaded their National ID for verification.", NotificationTypes.NationalIdUploaded); } catch { }
         return Ok(result);
     }
 
@@ -118,6 +128,7 @@ public class LandLordController : BaseController
         if (result == null)
             return BadRequest(new { Message = "Failed to upload unit documentation." });
 
+        try { await _notificationService.SendNotificationToRoleAsync("Admin", "A landlord has uploaded unit documentation for verification.", NotificationTypes.UnitDocumentationUploaded); } catch { }
         return Ok(result);
     }
 
@@ -141,6 +152,13 @@ public class LandLordController : BaseController
         var result = await _landLordService.DeleteLandLordAsync(id);
         if (!result)
             return NotFound();
+        try
+        {
+            var landlord = await _landLordService.GetLandLordByIdAsync(id);
+            if (landlord?.UserId != null)
+                await _notificationService.SendRealTimeNotificationAsync(landlord.UserId, "Your account has been deleted by admin.", NotificationTypes.AccountDeleted);
+        }
+        catch { }
         return Ok();
     }
 
@@ -151,6 +169,13 @@ public class LandLordController : BaseController
         var result = await _landLordService.DeactivateLandLordAsync(id);
         if (!result)
             return NotFound();
+        try
+        {
+            var landlord = await _landLordService.GetLandLordByIdAsync(id);
+            if (landlord?.UserId != null)
+                await _notificationService.SendRealTimeNotificationAsync(landlord.UserId, "Your account has been deactivated by admin.", NotificationTypes.AccountDeactivated);
+        }
+        catch { }
         return Ok();
     }
 
@@ -161,6 +186,13 @@ public class LandLordController : BaseController
         var result = await _landLordService.ReactivateLandLordAsync(id);
         if (!result)
             return NotFound();
+        try
+        {
+            var landlord = await _landLordService.GetLandLordByIdAsync(id);
+            if (landlord?.UserId != null)
+                await _notificationService.SendRealTimeNotificationAsync(landlord.UserId, "Your account has been reactivated by admin.", NotificationTypes.AccountReactivated);
+        }
+        catch { }
         return Ok();
     }
 

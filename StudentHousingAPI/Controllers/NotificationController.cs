@@ -1,5 +1,6 @@
 using Business.DTOs.Requests;
 using Business.Interfaces;
+using Domain.Enums;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
@@ -336,7 +337,7 @@ public class NotificationController : BaseController
             var filter = new NotificationFilterRequest
             {
                 UserId = adminId,
-                Type = "PendingApproval",
+                Type = NotificationTypes.PendingApproval,
                 IsSeen = false,
                 PageNumber = pageNumber,
                 PageSize = pageSize

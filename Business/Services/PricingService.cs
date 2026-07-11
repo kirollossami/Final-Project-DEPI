@@ -51,7 +51,13 @@ public class PricingService : IPricingService
         if (room?.HousingUnit == null)
             throw new Exception("Room not found or not associated with a unit");
 
-        var unitPrice = room.HousingUnit.BaseMonthlyPrice;
+        var unitPrice = room.HousingUnit.BaseMonthlyPrice > 0
+            ? room.HousingUnit.BaseMonthlyPrice
+            : room.HousingUnit.Price;
+
+        if (unitPrice <= 0)
+            throw new Exception("Housing unit has no valid price set");
+
         var roomCount = await _roomRepository.GetAll()
             .CountAsync(r => r.HousingUnitId == room.HousingUnitId && !r.IsDeleted);
 
@@ -67,7 +73,7 @@ public class PricingService : IPricingService
         if (unit == null)
             throw new Exception("Unit not found");
 
-        return unit.BaseMonthlyPrice;
+        return unit.BaseMonthlyPrice > 0 ? unit.BaseMonthlyPrice : unit.Price;
     }
 
     public async Task<decimal> CalculateBookingPriceAsync(BookingType bookingType, Guid targetId, DateTime startDate, DateTime endDate)

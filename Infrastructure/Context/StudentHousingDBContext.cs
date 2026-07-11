@@ -69,5 +69,6 @@ public class StudentHousingDBContext : IdentityDbContext<User>
     public DbSet<EscrowTransaction> EscrowTransactions { get; set; }
     public DbSet<PaymentReceipt> PaymentReceipts { get; set; }
     public DbSet<PaymentHistory> PaymentHistories { get; set; }
+    public DbSet<Balance> Balances { get; set; }
 
 }

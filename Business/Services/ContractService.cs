@@ -5,102 +5,194 @@ using Domain.Entities;
 using Domain.Enums;
 using Infrastructure.Repositories.Base;
 using Microsoft.Extensions.Logging;
-using QuestPDF.Fluent;
-using QuestPDF.Helpers;
-using QuestPDF.Infrastructure;
-using System.Globalization;
-using System.Text;
 
 namespace Business.Services;
 
+/// <summary>
+/// Manages contracts that are manually uploaded as PDF files by the admin.
+/// No PDF is auto-generated — the admin prepares and uploads the contract file.
+/// </summary>
 public class ContractService : IContractService
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly IFileStorageService _fileStorageService;
+    private readonly IEscrowService _escrowService;
+    private readonly INotificationService _notificationService;
     private readonly ILogger<ContractService> _logger;
+    private const decimal PlatformFeePercentage = 5.0m; // 5% platform fee
 
     public ContractService(
         IUnitOfWork unitOfWork,
         IFileStorageService fileStorageService,
+        IEscrowService escrowService,
+        INotificationService notificationService,
         ILogger<ContractService> logger)
     {
         _unitOfWork = unitOfWork;
         _fileStorageService = fileStorageService;
+        _escrowService = escrowService;
+        _notificationService = notificationService;
         _logger = logger;
-        QuestPDF.Settings.License = LicenseType.Community;
     }
 
-    public async Task<ContractResponse> GenerateContractAsync(ContractGenerationRequest request)
+    // ─────────────────────────────────────────────────────────────────────────
+    // Admin uploads the contract PDF manually
+    // ─────────────────────────────────────────────────────────────────────────
+    public async Task<ContractResponse> UploadContractAsync(Guid bookingId, Stream pdfStream, string fileName)
     {
         try
         {
+            var booking = await _unitOfWork.Bookings.GetAsync(bookingId);
+            if (booking == null)
+                throw new ArgumentException($"Booking {bookingId} not found");
+
+            var payment = await _unitOfWork.Payments.GetByBookingIdAsync(bookingId);
+            bool isPaymentCompleted = payment != null && payment.PaymentStatus == PaymentStatus.Completed;
+
+            if (booking.BookingStatus != BookingStatus.WaitingForContract && !(booking.BookingStatus == BookingStatus.PendingPayment && isPaymentCompleted))
+                throw new InvalidOperationException($"Booking must be in WaitingForContract status. Current: {booking.BookingStatus}");
+
+            // Store the uploaded PDF
+            var storedFileName = $"contract_{bookingId}_{DateTime.UtcNow:yyyyMMddHHmmss}.pdf";
+            var pdfUrl = await _fileStorageService.SaveFileAsync(pdfStream, storedFileName, "contracts");
+
             var contract = new Contract
             {
                 ContractId = Guid.NewGuid(),
-                BookingId = request.BookingId,
-                ContractNumber = $"CTR-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString().Substring(0, 8).ToUpper()}",
-                ReceivingDate = request.ReceivingDate,
-                HandoverDate = request.HandoverDate,
-                FinalPrice = request.FinalPrice,
-                DurationType = request.DurationType,
-                DurationValue = request.DurationValue,
-                OwnerFullName = request.OwnerFullName,
-                OwnerNationalId = request.OwnerNationalId,
-                StudentFullName = request.StudentFullName,
-                StudentNationalId = request.StudentNationalId
+                BookingId = bookingId,
+                ContractNumber = $"CTR-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString()[..8].ToUpper()}",
+                OriginalContractPdfPath = pdfUrl,
+                ContractStatus = ContractStatus.WaitingForSignatures,
+                CreatedAt = DateTime.UtcNow
             };
-
-            // Generate PDF
-            var pdfBytes = GenerateContractPdfContent(contract);
-            var pdfFileName = $"contract_{contract.ContractNumber}.pdf";
-            var pdfUrl = await _fileStorageService.SaveFileAsync(new MemoryStream(pdfBytes), pdfFileName, "contracts");
-
-            contract.GeneratedPdfUrl = pdfUrl;
 
             await _unitOfWork.Contracts.Insert(contract);
             await _unitOfWork.SaveChangesAsync();
 
-            _logger.LogInformation($"Contract generated successfully: {contract.ContractNumber}");
-
-            return new ContractResponse
+            // Create escrow transaction when contract is uploaded
+            if (payment != null)
             {
-                ContractId = contract.ContractId,
-                ContractNumber = contract.ContractNumber,
-                GeneratedPdfUrl = contract.GeneratedPdfUrl,
-                IsStudentSigned = contract.IsStudentSigned,
-                IsOwnerSigned = contract.IsOwnerSigned,
-                IsAdminApproved = contract.IsAdminApproved,
-                CreatedAt = contract.CreatedAt
-            };
+                // Check if escrow already exists for this payment
+                var existingEscrow = await _unitOfWork.EscrowTransactions.GetByPaymentIdAsync(payment.PaymentId);
+                if (existingEscrow == null)
+                {
+                    // Create new escrow linked to this contract
+                    await _escrowService.CreateEscrowAsync(payment.PaymentId, contract.ContractId, PlatformFeePercentage);
+                    _logger.LogInformation("Escrow created for payment {PaymentId} and contract {ContractId}",
+                        payment.PaymentId, contract.ContractId);
+                }
+                else
+                {
+                    // Link existing escrow to this contract
+                    existingEscrow.ContractId = contract.ContractId;
+                    await _unitOfWork.EscrowTransactions.Update(existingEscrow);
+                    await _unitOfWork.SaveChangesAsync();
+                    _logger.LogInformation("Existing escrow {EscrowId} linked to contract {ContractId}",
+                        existingEscrow.EscrowId, contract.ContractId);
+                }
+            }
+
+            // Update booking status
+            booking.BookingStatus = BookingStatus.WaitingForSignatures;
+            booking.UpdatedAt = DateTime.UtcNow;
+            await _unitOfWork.Bookings.Update(booking);
+            await _unitOfWork.SaveChangesAsync();
+
+            _logger.LogInformation("Contract {Number} uploaded for booking {BookingId}, status updated to WaitingForSignatures",
+                contract.ContractNumber, bookingId);
+
+            try
+            {
+                var student = await _unitOfWork.Students.GetAsync(booking.StudentId);
+                if (!string.IsNullOrEmpty(student?.UserId))
+                    await _notificationService.SendRealTimeNotificationAsync(student.UserId,
+                        "A contract has been uploaded for your booking. Please review and sign it.",
+                        NotificationTypes.ContractReady);
+            }
+            catch { }
+
+            try
+            {
+                var owner = await ResolveOwnerAsync(booking);
+                if (!string.IsNullOrEmpty(owner?.UserId))
+                    await _notificationService.SendRealTimeNotificationAsync(owner.UserId,
+                        "A new booking contract is ready for your signature. Please review and sign.",
+                        NotificationTypes.ContractReady);
+            }
+            catch { }
+
+            return MapToResponse(contract);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error generating contract");
+            _logger.LogError(ex, "Error uploading contract for booking {BookingId}", bookingId);
             throw;
         }
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // Sign contract (student or landlord uploads signed PDF)
+    // ─────────────────────────────────────────────────────────────────────────
     public async Task<ContractResponse> SignContractAsync(ContractSignatureRequest request)
     {
         try
         {
             var contract = await _unitOfWork.Contracts.GetAsync(request.ContractId);
             if (contract == null)
-            {
                 throw new ArgumentException("Contract not found");
-            }
+
+            var booking = await _unitOfWork.Bookings.GetAsync(contract.BookingId);
+
+            var signingAllowedStatuses = new[]
+            {
+                BookingStatus.WaitingForSignatures,
+                BookingStatus.WaitingForStudentSignature,
+                BookingStatus.WaitingForLandlordSignature
+            };
+
+            if (booking != null && !signingAllowedStatuses.Contains(booking.BookingStatus))
+                throw new InvalidOperationException(
+                    $"Booking is not in a signable state. Current status: {booking.BookingStatus}");
 
             if (request.Role.Equals("Student", StringComparison.OrdinalIgnoreCase))
             {
-                contract.StudentSignedPdfUrl = request.SignedPdfUrl;
+                if (contract.IsStudentSigned)
+                    throw new InvalidOperationException("Student has already signed this contract.");
+
+                contract.StudentSignedContractPath = request.SignedPdfUrl;
                 contract.IsStudentSigned = true;
                 contract.StudentSignedAt = DateTime.UtcNow;
+
+                if (booking != null)
+                {
+                    booking.BookingStatus = contract.IsLandlordSigned
+                        ? BookingStatus.WaitingForAdminApproval
+                        : BookingStatus.WaitingForLandlordSignature;
+                    booking.UpdatedAt = DateTime.UtcNow;
+                    await _unitOfWork.Bookings.Update(booking);
+                    _logger.LogInformation("Booking {Id} → {Status} after student signed",
+                        booking.BookingId, booking.BookingStatus);
+                }
             }
             else if (request.Role.Equals("Owner", StringComparison.OrdinalIgnoreCase))
             {
-                contract.OwnerSignedPdfUrl = request.SignedPdfUrl;
-                contract.IsOwnerSigned = true;
-                contract.OwnerSignedAt = DateTime.UtcNow;
+                if (contract.IsLandlordSigned)
+                    throw new InvalidOperationException("Owner has already signed this contract.");
+
+                contract.LandlordSignedContractPath = request.SignedPdfUrl;
+                contract.IsLandlordSigned = true;
+                contract.LandlordSignedAt = DateTime.UtcNow;
+
+                if (booking != null)
+                {
+                    booking.BookingStatus = contract.IsStudentSigned
+                        ? BookingStatus.WaitingForAdminApproval
+                        : BookingStatus.WaitingForStudentSignature;
+                    booking.UpdatedAt = DateTime.UtcNow;
+                    await _unitOfWork.Bookings.Update(booking);
+                    _logger.LogInformation("Booking {Id} → {Status} after owner signed",
+                        booking.BookingId, booking.BookingStatus);
+                }
             }
             else
             {
@@ -108,22 +200,49 @@ public class ContractService : IContractService
             }
 
             contract.UpdatedAt = DateTime.UtcNow;
-
             await _unitOfWork.Contracts.Update(contract);
             await _unitOfWork.SaveChangesAsync();
 
-            _logger.LogInformation($"Contract signed by {request.Role}: {contract.ContractNumber}");
+            _logger.LogInformation("Contract {Number} signed by {Role}", contract.ContractNumber, request.Role);
 
-            return new ContractResponse
+            try
             {
-                ContractId = contract.ContractId,
-                ContractNumber = contract.ContractNumber,
-                GeneratedPdfUrl = contract.GeneratedPdfUrl,
-                IsStudentSigned = contract.IsStudentSigned,
-                IsOwnerSigned = contract.IsOwnerSigned,
-                IsAdminApproved = contract.IsAdminApproved,
-                CreatedAt = contract.CreatedAt
-            };
+                if (request.Role.Equals("Student", StringComparison.OrdinalIgnoreCase))
+                {
+                    var owner = await ResolveOwnerAsync(booking!);
+                    if (contract.IsLandlordSigned)
+                    {
+                        await _notificationService.SendNotificationToRoleAsync("Admin",
+                            $"Both parties have signed contract {contract.ContractNumber}. Please review and approve.",
+                            NotificationTypes.ContractSigned);
+                    }
+                    else if (!string.IsNullOrEmpty(owner?.UserId))
+                    {
+                        await _notificationService.SendRealTimeNotificationAsync(owner.UserId,
+                            "The student has signed the contract. Please review and sign.",
+                            NotificationTypes.StudentSigned);
+                    }
+                }
+                else
+                {
+                    var student = await _unitOfWork.Students.GetAsync(booking!.StudentId);
+                    if (contract.IsStudentSigned)
+                    {
+                        await _notificationService.SendNotificationToRoleAsync("Admin",
+                            $"Both parties have signed contract {contract.ContractNumber}. Please review and approve.",
+                            NotificationTypes.ContractSigned);
+                    }
+                    else if (!string.IsNullOrEmpty(student?.UserId))
+                    {
+                        await _notificationService.SendRealTimeNotificationAsync(student.UserId,
+                            "The landlord has signed the contract. Please review and sign.",
+                            NotificationTypes.LandlordSigned);
+                    }
+                }
+            }
+            catch { }
+
+            return MapToResponse(contract);
         }
         catch (Exception ex)
         {
@@ -132,170 +251,84 @@ public class ContractService : IContractService
         }
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // Queries
+    // ─────────────────────────────────────────────────────────────────────────
     public async Task<ContractResponse?> GetContractByIdAsync(Guid contractId)
     {
         var contract = await _unitOfWork.Contracts.GetAsync(contractId);
-        if (contract == null) return null;
-
-        return new ContractResponse
-        {
-            ContractId = contract.ContractId,
-            ContractNumber = contract.ContractNumber,
-            GeneratedPdfUrl = contract.GeneratedPdfUrl,
-            IsStudentSigned = contract.IsStudentSigned,
-            IsOwnerSigned = contract.IsOwnerSigned,
-            IsAdminApproved = contract.IsAdminApproved,
-            CreatedAt = contract.CreatedAt
-        };
+        return contract == null ? null : MapToResponse(contract);
     }
 
     public async Task<ContractResponse?> GetContractByBookingIdAsync(Guid bookingId)
     {
         var contract = await _unitOfWork.Contracts.GetByBookingIdAsync(bookingId);
-        if (contract == null) return null;
-
-        return new ContractResponse
-        {
-            ContractId = contract.ContractId,
-            ContractNumber = contract.ContractNumber,
-            GeneratedPdfUrl = contract.GeneratedPdfUrl,
-            IsStudentSigned = contract.IsStudentSigned,
-            IsOwnerSigned = contract.IsOwnerSigned,
-            IsAdminApproved = contract.IsAdminApproved,
-            CreatedAt = contract.CreatedAt
-        };
+        return contract == null ? null : MapToResponse(contract);
     }
 
-    public async Task<byte[]> GenerateContractPdfAsync(Guid contractId)
+    public async Task<byte[]> GetContractPdfAsync(Guid contractId)
     {
         var contract = await _unitOfWork.Contracts.GetAsync(contractId);
         if (contract == null)
-        {
             throw new ArgumentException("Contract not found");
-        }
 
-        return GenerateContractPdfContent(contract);
+        // Return the most recent signed version, or the original uploaded file
+        var path = contract.LandlordSignedContractPath
+                ?? contract.StudentSignedContractPath
+                ?? contract.OriginalContractPdfPath;
+
+        if (string.IsNullOrEmpty(path))
+            throw new InvalidOperationException("No contract PDF is available yet");
+
+        var file = await _fileStorageService.GetFileAsync(path);
+        if (file == null)
+            throw new InvalidOperationException("Contract PDF file not found in storage");
+
+        return file.Value.Content;
     }
 
-    private byte[] GenerateContractPdfContent(Contract contract)
+    // ─────────────────────────────────────────────────────────────────────────
+    // Mapping
+    // ─────────────────────────────────────────────────────────────────────────
+    private static ContractResponse MapToResponse(Contract contract) => new ContractResponse
     {
-        var document = Document.Create(container =>
+        ContractId = contract.ContractId,
+        BookingId = contract.BookingId,
+        ContractNumber = contract.ContractNumber,
+        OriginalContractPdfPath = contract.OriginalContractPdfPath,
+        StudentSignedContractPath = contract.StudentSignedContractPath,
+        LandlordSignedContractPath = contract.LandlordSignedContractPath,
+        IsStudentSigned = contract.IsStudentSigned,
+        IsLandlordSigned = contract.IsLandlordSigned,
+        IsAdminApproved = contract.IsAdminApproved,
+        StudentSignedAt = contract.StudentSignedAt,
+        LandlordSignedAt = contract.LandlordSignedAt,
+        AdminApprovedAt = contract.AdminApprovedAt,
+        AdminNotes = contract.AdminNotes,
+        ContractStatus = contract.ContractStatus,
+        CreatedAt = contract.CreatedAt
+    };
+
+    private async Task<LandLord?> ResolveOwnerAsync(Booking booking)
+    {
+        if (booking.BedId.HasValue)
         {
-            container.Page(page =>
-            {
-                page.Size(PageSizes.A4);
-                page.Margin(2, Unit.Centimetre);
-                page.DefaultTextStyle(x => x.FontSize(12).FontFamily("Arial"));
-
-                page.Header().Element(header =>
-                {
-                    header.Row(row =>
-                    {
-                        row.RelativeItem().Column(column =>
-                        {
-                            column.Item().Text("عقد إيجار").Bold().FontSize(20).FontColor(Colors.Blue.Darken2);
-                            column.Item().Text($"رقم العقد: {contract.ContractNumber}").FontSize(10);
-                            column.Item().Text($"تاريخ العقد: {contract.CreatedAt:dd/MM/yyyy}").FontSize(10);
-                        });
-                    });
-                });
-
-                page.Content().Element(content =>
-                {
-                    content.Column(column =>
-                    {
-                        column.Spacing(10);
-
-                        // Title
-                        column.Item().AlignCenter().Text("عقد إيجار سكن طلابي").Bold().FontSize(16);
-                        column.Item().LineHorizontal(1).LineColor(Colors.Grey.Lighten2);
-
-                        // Preamble
-                        column.Item().Text(GetArabicPreamble()).FontSize(11);
-                        column.Item().LineHorizontal(1).LineColor(Colors.Grey.Lighten2);
-
-                        // First Party (Owner)
-                        column.Item().Text("الطرف الأول (المؤجر):").Bold().FontSize(13);
-                        column.Item().Text($"الاسم الكامل: {contract.OwnerFullName}").FontSize(11);
-                        column.Item().Text($"الرقم القومي: {contract.OwnerNationalId}").FontSize(11);
-                        column.Item().LineHorizontal(1).LineColor(Colors.Grey.Lighten2);
-
-                        // Second Party (Student)
-                        column.Item().Text("الطرف الثاني (المستأجر):").Bold().FontSize(13);
-                        column.Item().Text($"الاسم الكامل: {contract.StudentFullName}").FontSize(11);
-                        column.Item().Text($"الرقم القومي: {contract.StudentNationalId}").FontSize(11);
-                        column.Item().LineHorizontal(1).LineColor(Colors.Grey.Lighten2);
-
-                        // Contract Terms
-                        column.Item().Text("بنود العقد:").Bold().FontSize(13);
-                        column.Item().Text(GetArabicContractTerms(contract)).FontSize(11);
-                        column.Item().LineHorizontal(1).LineColor(Colors.Grey.Lighten2);
-
-                        // Financial Details
-                        column.Item().Text("التفاصيل المالية:").Bold().FontSize(13);
-                        column.Item().Text($"الإجمالي النهائي: {contract.FinalPrice:N2} جنيه مصري").FontSize(11);
-                        column.Item().Text($"تاريخ الاستلام: {contract.ReceivingDate:dd/MM/yyyy}").FontSize(11);
-                        column.Item().Text($"تاريخ التسليم: {contract.HandoverDate:dd/MM/yyyy}").FontSize(11);
-                        
-                        var durationText = contract.DurationType == ContractDurationType.Monthly
-                            ? $"{contract.DurationValue} شهر"
-                            : $"{contract.DurationValue} سنة";
-                        column.Item().Text($"مدة العقد: {durationText}").FontSize(11);
-                        column.Item().LineHorizontal(1).LineColor(Colors.Grey.Lighten2);
-
-                        // Signatures Section
-                        column.Item().Text("التوقيعات:").Bold().FontSize(13);
-                        column.Item().Row(row =>
-                        {
-                            row.RelativeItem().Column(col =>
-                            {
-                                col.Item().Text("توقيع الطرف الأول (المؤجر):").FontSize(11);
-                                col.Item().Height(3, Unit.Centimetre).Border(1).BorderColor(Colors.Grey.Lighten1);
-                            });
-                            row.ConstantItem(50).Column(col => { });
-                            row.RelativeItem().Column(col =>
-                            {
-                                col.Item().Text("توقيع الطرف الثاني (المستأجر):").FontSize(11);
-                                col.Item().Height(3, Unit.Centimetre).Border(1).BorderColor(Colors.Grey.Lighten1);
-                            });
-                        });
-
-                        // Footer
-                        column.Item().PaddingTop(20).AlignCenter()
-                            .Text("هذا العقد ملزم لكلا الطرفين وفقاً للقانون المصري").FontSize(9).Italic();
-                    });
-                });
-
-                page.Footer().AlignCenter().Text(x =>
-                {
-                    x.Span("صفحة ");
-                    x.CurrentPageNumber();
-                });
-            });
-        });
-
-        return document.GeneratePdf();
-    }
-
-    private string GetArabicPreamble()
-    {
-        return "تم هذا العقد في اليوم .../.../.... بموجب القانون المدني المصري، بين الطرفين التاليين:";
-    }
-
-    private string GetArabicContractTerms(Contract contract)
-    {
-        var terms = new StringBuilder();
-        terms.AppendLine("1. يتعهد الطرف الأول (المؤجر) بتسليم الوحدة السكنية للطرف الثاني في حالة جيدة وصالحة للسكن.");
-        terms.AppendLine("2. يتعهد الطرف الثاني (المستأجر) بدفع المبلغ المتفق عليه في المواعيد المحددة.");
-        terms.AppendLine("3. يلتزم الطرف الثاني بالمحافظة على الوحدة السكنية ومحتوياتها وعدم إحداث أي تلفيات.");
-        terms.AppendLine("4. لا يحق للطرف الثاني تأجير الوحدة السكنية للغير دون موافقة كتابية من الطرف الأول.");
-        terms.AppendLine("5. يلتزم الطرف الثاني بدفع فواتير الخدمات (كهرباء، مياه، غاز) المستحقة عليه.");
-        terms.AppendLine("6. يحق للطرف الأول فسخ العقد في حالة مخالفة الطرف الثاني لأي من بنود هذا العقد.");
-        terms.AppendLine("7. يلتزم الطرف الثاني بإعادة الوحدة السكنية في نفس الحالة التي استلمها عليها عند انتهاء العقد.");
-        terms.AppendLine("8. يعتبر هذا العقد ساري المفعول من تاريخ التوقيع عليه من كلا الطرفين.");
-        terms.AppendLine("9. أي نزاع ينشأ عن تنفيذ هذا العقد يرجع للقضاء المختص وفقاً للقانون المصري.");
-        terms.AppendLine("10. حرر هذا العقد من نسختين، لكل طرف نسخة، ولها نفس الحجية القانونية.");
-        
-        return terms.ToString();
+            var bed = await _unitOfWork.Beds.GetAsync(booking.BedId.Value);
+            if (bed?.Room?.HousingUnit?.LandLordId is Guid lid1)
+                return await _unitOfWork.LandLords.GetAsync(lid1);
+        }
+        if (booking.RoomId.HasValue)
+        {
+            var room = await _unitOfWork.Rooms.GetAsync(booking.RoomId.Value);
+            if (room?.HousingUnit?.LandLordId is Guid lid2)
+                return await _unitOfWork.LandLords.GetAsync(lid2);
+        }
+        if (booking.HousingUnitId.HasValue)
+        {
+            var hu = await _unitOfWork.HousingUnits.GetAsync(booking.HousingUnitId.Value);
+            if (hu?.LandLordId is Guid lid3)
+                return await _unitOfWork.LandLords.GetAsync(lid3);
+        }
+        return null;
     }
 }

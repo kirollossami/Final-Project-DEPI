@@ -5,7 +5,7 @@ namespace Business.Interfaces;
 
 public interface IEscrowService
 {
-    Task<EscrowResponse> CreateEscrowAsync(Guid paymentId, Guid contractId, decimal platformFeePercentage);
+    Task<EscrowResponse> CreateEscrowAsync(Guid paymentId, Guid? contractId, decimal platformFeePercentage);
     Task<EscrowResponse?> GetEscrowByIdAsync(Guid escrowId);
     Task<EscrowResponse?> GetEscrowByPaymentIdAsync(Guid paymentId);
     Task<EscrowResponse> ReleaseEscrowAsync(EscrowReleaseRequest request);

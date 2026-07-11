@@ -9,6 +9,7 @@ using Infrastructure.Repositories.Base;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.Google;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -17,19 +18,56 @@ using SharpGrip.FluentValidation.AutoValidation.Endpoints.Extensions;
 using StudentHousingAPI.Validators;
 using System.Text;
 
-var builder = WebApplication.CreateBuilder(args);
+// ── Top-level catch: captures crashes that happen before the DI logger is ready ──
+// Writes to both the rolling file and the IIS stdout stream.
+var startupLogPath = Path.Combine(AppContext.BaseDirectory, "logs", $"startup-{DateTime.UtcNow:yyyy-MM-dd}.log");
+Directory.CreateDirectory(Path.GetDirectoryName(startupLogPath)!);
+
+void WriteStartupLog(string message, Exception? ex = null)
+{
+    try
+    {
+        var line = $"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff} [STARTUP] {message}";
+        if (ex != null) line += $"\nEXCEPTION: {ex}";
+        File.AppendAllText(startupLogPath, line + Environment.NewLine);
+        Console.WriteLine(line);
+    }
+    catch { /* must not throw */ }
+}
+
+WebApplication? app = null;
+
+try
+{
+    WriteStartupLog("=== APPLICATION STARTING ===");
+
+    var builder = WebApplication.CreateBuilder(args);
+
+// ── Logging — Console + file
+//    Standard ASP.NET Core logging configuration
+builder.Logging.ClearProviders();
+builder.Logging.AddConsole();
+builder.Logging.AddDebug();
+builder.Logging.SetMinimumLevel(LogLevel.Information);
 
 // Add services to the container.
 builder.Services.AddControllers();
+builder.Services.AddHttpContextAccessor();
 
 // Configure DbContext
 builder.Services.AddDbContext<StudentHousingDBContext>(options =>
     options.UseSqlServer(
         builder.Configuration.GetConnectionString("DefaultConnection"),
-        sqlOptions => sqlOptions.EnableRetryOnFailure(
-            maxRetryCount: 5,
-            maxRetryDelay: TimeSpan.FromSeconds(30),
-            errorNumbersToAdd: null)));
+        sqlOptions =>
+        {
+            sqlOptions.EnableRetryOnFailure(
+                maxRetryCount: 5,
+                maxRetryDelay: TimeSpan.FromSeconds(30),
+                errorNumbersToAdd: null);
+            // Increase command timeout for slow remote / shared-hosting SQL Server.
+            // The default 30 s is too short for large migrations or heavy queries.
+            sqlOptions.CommandTimeout(300); // 5 minutes
+        }));
 
 // Configure Identity
 builder.Services.AddIdentity<User, IdentityRole>(options => {
@@ -197,6 +235,7 @@ builder.Services.AddScoped<IWishlistService, WishlistService>();
 builder.Services.AddScoped<IComplaintService, ComplaintService>();
 builder.Services.AddScoped<IPaymentService, PaymentService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
+builder.Services.AddScoped<INotificationDispatcher, StudentHousingAPI.Services.SignalRNotificationDispatcher>();
 builder.Services.AddScoped<IPricingService, PricingService>();
 builder.Services.AddScoped<IBookingConflictService, BookingConflictService>();
 builder.Services.AddSingleton<ITokenBlacklistService, TokenBlacklistService>();
@@ -204,24 +243,59 @@ builder.Services.AddScoped<IChatService, ChatService>();
 
 // Payment and Contract Services
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
-builder.Services.AddScoped<IPaymentReceiptRepository, PaymentReceiptRepository>();
-builder.Services.AddScoped<IPaymentTransactionRepository, PaymentTransactionRepository>();
-builder.Services.AddScoped<IEscrowTransactionRepository, EscrowTransactionRepository>();
-builder.Services.AddScoped<IContractRepository, ContractRepository>();
-
-// Paymob Configuration
-builder.Services.Configure<PaymobSettings>(
-    builder.Configuration.GetSection(PaymobSettings.SectionName));
-builder.Services.AddHttpClient<IPaymobService, PaymobService>();
-
-// Payment and Contract Workflow Services
-builder.Services.AddScoped<IPaymobService, PaymobService>();
+builder.Services.AddScoped<IContractWorkflowService, ContractWorkflowService>();
 builder.Services.AddScoped<IContractService, ContractService>();
 builder.Services.AddScoped<IEscrowService, EscrowService>();
 builder.Services.AddScoped<IReceiptService, ReceiptService>();
 builder.Services.AddScoped<IPaymentHistoryService, PaymentHistoryService>();
 builder.Services.AddScoped<IBookingPaymentService, BookingPaymentService>();
 builder.Services.AddScoped<IAdminApprovalService, AdminApprovalService>();
+builder.Services.AddScoped<IBookingApprovalService, BookingApprovalService>();
+builder.Services.AddScoped<IBalanceService, BalanceService>();
+
+// Paymob Configuration
+builder.Services.Configure<PaymobSettings>(
+    builder.Configuration.GetSection(PaymobSettings.SectionName));
+
+// Validate Paymob settings early to surface configuration issues immediately
+var paymobConfig = builder.Configuration.GetSection(PaymobSettings.SectionName).Get<PaymobSettings>();
+if (paymobConfig == null)
+{
+    // Paymob config missing — warn and continue. Payment endpoints will return errors until configured.
+    Console.Error.WriteLine("Warning: Paymob configuration section is missing. Payment features will be disabled until configured.");
+}
+// Require either a valid secret key present in Paymob:ApiKey or Paymob:SecretKey or via environment
+// ApiKey can be base64 encoded (service will decode it) or plain text starting with egy_sk_
+var paymobHasSecret = paymobConfig != null && !string.IsNullOrWhiteSpace(paymobConfig.ApiKey);
+var paymobSecretFromConfig = builder.Configuration["Paymob:SecretKey"];
+var paymobHasEnv = !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("PAYMOB_SECRET"))
+                  || !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("PAYMOB_APIKEY"))
+                  || !string.IsNullOrWhiteSpace(builder.Configuration["PAYMOB_SECRET"]);
+
+if (!paymobHasSecret && string.IsNullOrWhiteSpace(paymobSecretFromConfig) && !paymobHasEnv)
+{
+    // Log warning instead of failing startup so app can run without payments in development
+    Console.Error.WriteLine("Warning: Paymob secret key is not configured. Set Paymob:ApiKey (base64 encoded or egy_sk_...), Paymob:SecretKey, or the PAYMOB_SECRET env var to enable payments.");
+}
+
+if (paymobConfig != null && (string.IsNullOrWhiteSpace(paymobConfig.CardIntegrationId) || !int.TryParse(paymobConfig.CardIntegrationId, out _)))
+{
+    Console.Error.WriteLine("Warning: Paymob:CardIntegrationId is not configured or invalid. Some payment flows may not work.");
+}
+
+// Configure Paymob HttpClient with IHttpClientFactory
+builder.Services.AddHttpClient("Paymob")
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = true })
+    .ConfigureHttpClient(client =>
+    {
+        client.Timeout = TimeSpan.FromSeconds(30);
+    });
+
+builder.Services.AddScoped<IPaymobService, PaymobService>();
+
+// Background service: expire bookings whose signature deadline has passed
+builder.Services.AddHostedService<BookingExpirationService>();
+builder.Services.AddHostedService<PaymentSyncService>();
 #region Validators
 builder.Services.AddValidatorsFromAssemblyContaining<LoginValidator>();
 builder.Services.AddValidatorsFromAssemblyContaining<StudentRegisterValidator>();
@@ -230,8 +304,10 @@ builder.Services.AddFluentValidationAutoValidation();
 #endregion
 
 
-// Add CORS
-var allowedOrigins = builder.Configuration.GetSection("AllowedOrigins").Get<string[]>() ?? new[] { "http://localhost:4200" };
+// Add CORS — origins are driven entirely by appsettings.json "AllowedOrigins"
+var allowedOrigins = builder.Configuration.GetSection("AllowedOrigins").Get<string[]>()
+    ?? new[] { "https://unistay-shbs.vercel.app", "http://localhost:4200" };
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowSpecific", policy =>
@@ -240,6 +316,15 @@ builder.Services.AddCors(options =>
               .AllowAnyMethod()
               .AllowAnyHeader()
               .AllowCredentials();
+    });
+
+    // Paymob webhooks are server-to-server: no Origin header is sent.
+    // A separate open policy is applied only to the callback endpoints.
+    options.AddPolicy("AllowPaymobWebhook", policy =>
+    {
+        policy.AllowAnyOrigin()
+              .AllowAnyMethod()
+              .AllowAnyHeader();
     });
 });
 
@@ -276,23 +361,156 @@ builder.Services.AddSwaggerGen(options =>
     
 });
 
-builder.Services.AddSignalR();
+builder.Services.AddSignalR(options =>
+{
+    options.EnableDetailedErrors = true;
+}).AddJsonProtocol(options =>
+{
+    options.PayloadSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
+});
 
-var app = builder.Build();
+    app = builder.Build();
 
-// Absolute top of the pipeline: normalize request scheme to https when deployed under reverse proxy
+    WriteStartupLog("=== builder.Build() succeeded ===");
+
+// ── Application Lifetime Event Logging ───────────────────────────────────────
+//    Logs application startup, shutdown, and any unhandled exceptions that
+//    cause the application to terminate unexpectedly.
+var lifetimeLogger = app.Services.GetRequiredService<ILogger<Program>>();
+app.Lifetime.ApplicationStarted.Register(() =>
+{
+    lifetimeLogger.LogInformation("╔══════════════════════════════════════════════════════════════════╗");
+    lifetimeLogger.LogInformation("║ APPLICATION STARTED                                                       ║");
+    lifetimeLogger.LogInformation("╚══════════════════════════════════════════════════════════════════╝");
+});
+
+app.Lifetime.ApplicationStopping.Register(() =>
+{
+    lifetimeLogger.LogInformation("╔══════════════════════════════════════════════════════════════════╗");
+    lifetimeLogger.LogInformation("║ APPLICATION STOPPING - Graceful shutdown initiated                 ║");
+    lifetimeLogger.LogInformation("╚══════════════════════════════════════════════════════════════════╝");
+});
+
+app.Lifetime.ApplicationStopped.Register(() =>
+{
+    lifetimeLogger.LogInformation("╔══════════════════════════════════════════════════════════════════╗");
+    lifetimeLogger.LogInformation("║ APPLICATION STOPPED                                                        ║");
+    lifetimeLogger.LogInformation("╚══════════════════════════════════════════════════════════════════╝");
+});
+
+// ── Global Unhandled Exception Handler ─────────────────────────────────────
+//    Catches any unhandled exceptions from background services or the main thread
+//    that would otherwise cause the application to crash silently.
+AppDomain.CurrentDomain.UnhandledException += (sender, e) =>
+{
+    var exception = e.ExceptionObject as Exception;
+    if (exception != null)
+    {
+        lifetimeLogger.LogCritical(exception, "╔══════════════════════════════════════════════════════════════════╗");
+        lifetimeLogger.LogCritical("║ UNHANDLED EXCEPTION - Application crashing                            ║");
+        lifetimeLogger.LogCritical("╚══════════════════════════════════════════════════════════════════╝");
+        lifetimeLogger.LogCritical("Exception Type: {ExceptionType}", exception.GetType().FullName);
+        lifetimeLogger.LogCritical("Exception Message: {Message}", exception.Message);
+        lifetimeLogger.LogCritical("Exception StackTrace: {StackTrace}", exception.StackTrace);
+        if (exception.InnerException != null)
+        {
+            lifetimeLogger.LogCritical("Inner Exception: {InnerMessage}", exception.InnerException.Message);
+            lifetimeLogger.LogCritical("Inner StackTrace: {InnerStackTrace}", exception.InnerException.StackTrace);
+        }
+    }
+};
+
+// ── ForwardedHeaders: must be the very first middleware so that all subsequent
+//    middleware (HTTPS redirection, authentication, etc.) see the real scheme
+//    and IP forwarded by IIS / the load balancer.
+app.UseForwardedHeaders(new ForwardedHeadersOptions
+{
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+});
+
+// Global exception handling middleware - return JSON for all errors
 app.Use(async (context, next) =>
 {
-    if (context.Request.Headers.TryGetValue("X-Forwarded-Proto", out var proto))
+    try
     {
-        context.Request.Scheme = proto.ToString();
+        await next();
     }
-    else if (!context.Request.Host.Host.Contains("localhost"))
+    catch (Exception ex)
     {
-        context.Request.Scheme = "https";
+        context.Response.StatusCode = 500;
+        context.Response.ContentType = "application/json";
+        await context.Response.WriteAsJsonAsync(new
+        {
+            error = new
+            {
+                message = ex.Message,
+                type = ex.GetType().Name
+            }
+        });
     }
-    await next();
 });
+
+// ── Early Paymob callback logging ──────────────────────────────────────────
+//    Fires BEFORE routing, so even if the controller never executes we
+//    have evidence the request arrived at ASP.NET Core.
+app.Use(async (context, next) =>
+{
+    var path = context.Request.Path;
+    var isCallback =
+        path.StartsWithSegments("/api/BookingPayment/callback", StringComparison.OrdinalIgnoreCase);
+
+    if (isCallback)
+    {
+        var logger = context.RequestServices.GetRequiredService<ILoggerFactory>()
+                         .CreateLogger("PaymobCallbackMiddleware");
+        logger.LogInformation(
+            "[PaymobCallback] {Method} {Path}{Query} received. Content-Type={Ct} User-Agent={Ua} IP={Ip}",
+            context.Request.Method,
+            context.Request.Path,
+            context.Request.QueryString,
+            context.Request.ContentType ?? "(none)",
+            context.Request.Headers.UserAgent.ToString(),
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown");
+    }
+
+    await next();
+
+    if (isCallback)
+    {
+        var logger = context.RequestServices.GetRequiredService<ILoggerFactory>()
+                         .CreateLogger("PaymobCallbackMiddleware");
+        logger.LogInformation(
+            "[PaymobCallback] Response status {Status} for {Method} {Path}",
+            context.Response.StatusCode,
+            context.Request.Method,
+            context.Request.Path);
+    }
+});
+
+// Handle 404 and other status codes as JSON for API routes
+app.Use(async (context, next) =>
+{
+    await next();
+
+    if (context.Response.StatusCode >= 400 && context.Request.Path.StartsWithSegments("/api"))
+    {
+        context.Response.ContentType = "application/json";
+        if (!context.Response.HasStarted)
+        {
+            await context.Response.WriteAsJsonAsync(new
+            {
+                error = new
+                {
+                    message = context.Response.StatusCode == 404 ? "Resource not found" : "An error occurred",
+                    statusCode = context.Response.StatusCode
+                }
+            });
+        }
+    }
+});
+
+// NOTE: X-Forwarded-Proto is now handled by app.UseForwardedHeaders() above.
+//       The manual middleware has been removed to avoid double-processing.
 
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())
@@ -329,10 +547,65 @@ app.MapGet("/", async context =>
 
 app.UseCors("AllowSpecific");
 
+// Add CSP headers to allow payment gateway iframes
+app.Use(async (context, next) =>
+{
+    context.Response.Headers.Append("Content-Security-Policy", 
+        "frame-ancestors 'self' https://ap.gateway.mastercard.com https://accept.paymob.com;");
+    await next();
+});
+
 app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
 app.MapHub<StudentHousingAPI.Hubs.ChatHub>("/chatHub");
+app.MapHub<StudentHousingAPI.Hubs.NotificationHub>("/notificationHub");
 
-app.Run();
+    WriteStartupLog("=== APPLICATION BUILT SUCCESSFULLY — calling app.Run() ===");
+
+    // ── Auto-apply pending EF migrations on startup ──────────────────────────
+    // Runs synchronously before the first request is served.
+    // If the migration fails, logs the error and continues — the app will still
+    // start; individual DB calls may fail but the process won't crash silently.
+    try
+    {
+        WriteStartupLog("Applying pending EF Core migrations...");
+        using var migrationScope = app.Services.CreateScope();
+        var db = migrationScope.ServiceProvider.GetRequiredService<StudentHousingDBContext>();
+        var pending = db.Database.GetPendingMigrations().ToList();
+        if (pending.Count > 0)
+        {
+            WriteStartupLog($"Applying {pending.Count} pending migration(s): {string.Join(", ", pending)}");
+            db.Database.Migrate();
+            WriteStartupLog("Migrations applied successfully.");
+        }
+        else
+        {
+            WriteStartupLog("No pending migrations.");
+        }
+    }
+    catch (Exception migEx)
+    {
+        WriteStartupLog("WARNING: EF migration failed — check the connection string and DB permissions.", migEx);
+        // Do NOT rethrow — let the app start; the background services will retry DB calls
+    }
+
+    app.Run();
+    WriteStartupLog("=== app.Run() returned normally ===");
+}
+catch (Exception ex)
+{
+    WriteStartupLog("=== FATAL STARTUP EXCEPTION — application could not start ===", ex);
+
+    // Also try to write via the DI logger if it was already built
+    try
+    {
+        var logger = app?.Services?.GetService<ILogger<Program>>();
+        logger?.LogCritical(ex, "FATAL: Application failed to start");
+    }
+    catch { /* ignore — DI may not be available */ }
+
+    // Re-throw so IIS/the process host records exit code != 0
+    throw;
+}

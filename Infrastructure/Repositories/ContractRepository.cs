@@ -35,7 +35,7 @@ public class ContractRepository : BaseRepository<Contract>, IContractRepository
         return await entities
             .Include(c => c.Booking)
             .ThenInclude(b => b.Student)
-            .Where(c => !c.IsStudentSigned || !c.IsOwnerSigned)
+            .Where(c => !c.IsStudentSigned || !c.IsLandlordSigned)
             .ToListAsync();
     }
 
@@ -44,7 +44,7 @@ public class ContractRepository : BaseRepository<Contract>, IContractRepository
         return await entities
             .Include(c => c.Booking)
             .ThenInclude(b => b.Student)
-            .Where(c => c.IsStudentSigned && c.IsOwnerSigned && !c.IsAdminApproved)
+            .Where(c => c.IsStudentSigned && c.IsLandlordSigned && !c.IsAdminApproved)
             .ToListAsync();
     }
 }

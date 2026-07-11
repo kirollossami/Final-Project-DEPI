@@ -13,29 +13,97 @@ namespace Business.Services;
 public class BookingService : IBookingService
 {
     private readonly IBookingRepository _bookingRepository;
+    private readonly IPaymentRepository _paymentRepository;
     private readonly ICommissionRecordRepository _commissionRecordRepository;
     private readonly IStudentRepository _studentRepository;
+    private readonly ILandLordRepository _landLordRepository;
+    private readonly IBedRepository _bedRepository;
+    private readonly IRoomRepository _roomRepository;
+    private readonly IHousingUnitRepository _housingUnitRepository;
     private readonly IPricingService _pricingService;
     private readonly IBookingConflictService _bookingConflictService;
     private readonly IChatService _chatService;
+    private readonly IContractWorkflowService _contractWorkflowService;
     private readonly CommissionSettings _commissionSettings;
 
     public BookingService(
         IBookingRepository bookingRepository,
         ICommissionRecordRepository commissionRecordRepository,
         IStudentRepository studentRepository,
+        ILandLordRepository landLordRepository,
+        IBedRepository bedRepository,
+        IRoomRepository roomRepository,
+        IHousingUnitRepository housingUnitRepository,
         IPricingService pricingService,
         IBookingConflictService bookingConflictService,
         IChatService chatService,
+        IPaymentRepository paymentRepository,
+        IContractWorkflowService contractWorkflowService,
         IOptions<CommissionSettings> commissionSettings)
     {
         _bookingRepository = bookingRepository;
         _commissionRecordRepository = commissionRecordRepository;
         _studentRepository = studentRepository;
+        _landLordRepository = landLordRepository;
+        _bedRepository = bedRepository;
+        _roomRepository = roomRepository;
+        _housingUnitRepository = housingUnitRepository;
         _pricingService = pricingService;
         _bookingConflictService = bookingConflictService;
         _chatService = chatService;
+        _paymentRepository = paymentRepository;
+        _contractWorkflowService = contractWorkflowService;
         _commissionSettings = commissionSettings.Value;
+    }
+
+    public async Task<bool> ApproveBookingAsync(Guid bookingId, string adminUserId, string? adminNotes = null)
+    {
+        var booking = await _bookingRepository.GetAsync(bookingId);
+        if (booking == null) return false;
+
+        // Only allow approval if a payment exists and is completed
+        var payment = await _paymentRepository.GetByBookingIdAsync(bookingId);
+        var hasPaid = payment != null && payment.PaymentStatus == Domain.Enums.PaymentStatus.Completed;
+
+        if (!hasPaid) return false;
+
+        booking.BookingStatus = Domain.Enums.BookingStatus.Approved;
+        booking.UpdatedAt = DateTime.UtcNow;
+        await _bookingRepository.Update(booking);
+        await _bookingRepository.CommitAsync();
+
+        // Trigger contract workflow (generate contract, create escrow, receipts, notifications)
+        try
+        {
+            if (payment != null)
+            {
+                await _contractWorkflowService.StartWorkflowAsync(booking.BookingId, payment.PaymentId);
+            }
+        }
+        catch
+        {
+            // Log but do not fail approval
+        }
+
+        return true;
+    }
+
+    public async Task<bool> RejectBookingAsync(Guid bookingId, string adminUserId, string? adminNotes = null)
+    {
+        var booking = await _bookingRepository.GetAsync(bookingId);
+        if (booking == null) return false;
+
+        // Only allow rejection if a payment exists and is completed
+        var payment = await _paymentRepository.GetByBookingIdAsync(bookingId);
+        var hasPaid = payment != null && payment.PaymentStatus == Domain.Enums.PaymentStatus.Completed;
+        if (!hasPaid) return false;
+
+        booking.BookingStatus = Domain.Enums.BookingStatus.Rejected;
+        booking.UpdatedAt = DateTime.UtcNow;
+        await _bookingRepository.Update(booking);
+        await _bookingRepository.CommitAsync();
+
+        return true;
     }
 
     public async Task<BookingResponse?> GetBookingByIdAsync(Guid bookingId)
@@ -145,20 +213,44 @@ public class BookingService : IBookingService
         var student = await _studentRepository.GetAll()
             .FirstOrDefaultAsync(s => s.UserId == userId);
 
-        if (student == null)
-        {
-            return new BookingIndexedResponse
-            {
-                Records = new List<BookingResponse>(),
-                TotalRecords = 0,
-                PageIndex = pageNumber - 1,
-                PageSize = pageSize
-            };
-        }
+        IQueryable<Domain.Entities.Booking> query;
 
-        var query = _bookingRepository.GetAll()
-            .Include(b => b.CommissionRecord)
-            .Where(b => b.StudentId == student.StudentId);
+        if (student != null)
+        {
+            query = _bookingRepository.GetAll()
+                .Include(b => b.CommissionRecord)
+                .Where(b => b.StudentId == student.StudentId);
+        }
+        else
+        {
+            var landlord = await _landLordRepository.GetAll()
+                .FirstOrDefaultAsync(l => l.UserId == userId);
+
+            if (landlord == null)
+            {
+                return new BookingIndexedResponse
+                {
+                    Records = new List<BookingResponse>(),
+                    TotalRecords = 0,
+                    PageIndex = pageNumber - 1,
+                    PageSize = pageSize
+                };
+            }
+
+            query = _bookingRepository.GetAll()
+                .Include(b => b.CommissionRecord)
+                .Include(b => b.Room)
+                .ThenInclude(r => r.HousingUnit)
+                .Include(b => b.Bed)
+                .ThenInclude(bed => bed.Room)
+                .ThenInclude(r => r.HousingUnit)
+                .Include(b => b.HousingUnit)
+                .Where(b => 
+                    (b.HousingUnit != null && b.HousingUnit.LandLordId == landlord.LandLordId) ||
+                    (b.Room != null && b.Room.HousingUnit != null && b.Room.HousingUnit.LandLordId == landlord.LandLordId) ||
+                    (b.Bed != null && b.Bed.Room != null && b.Bed.Room.HousingUnit != null && b.Bed.Room.HousingUnit.LandLordId == landlord.LandLordId)
+                );
+        }
 
         if (statusFilter.HasValue)
         {
@@ -204,62 +296,136 @@ public class BookingService : IBookingService
         var targetCount = new[] { request.BedId, request.RoomId, request.HousingUnitId }.Count(id => id.HasValue);
         if (targetCount != 1)
         {
-            return null;
+            throw new ArgumentException($"Exactly one of BedId, RoomId, or HousingUnitId must be provided. Got {targetCount}.");
         }
 
-        // Determine the target ID based on booking type
-        Guid? targetId = request.BookingType switch
-        {
-            BookingType.Bed => request.BedId,
-            BookingType.Room => request.RoomId,
-            BookingType.Unit => request.HousingUnitId,
-            _ => null
-        };
+        // Validate student is approved by admin
+        var student = await _studentRepository.GetAll()
+            .FirstOrDefaultAsync(s => s.StudentId == request.StudentId);
+        if (student == null)
+            throw new InvalidOperationException("Student not found.");
 
-        if (targetId == null)
+        if (student.UniversityVerificationStatus != UniversityVerificationStatus.Approved)
+            throw new InvalidOperationException("Student account must be approved by admin before making a booking.");
+
+        // Resolve HousingUnitId and RoomId from BedId if booking a bed
+        Guid? resolvedHousingUnitId = request.HousingUnitId;
+        Guid? resolvedRoomId = request.RoomId;
+
+        if (request.BedId.HasValue)
         {
-            return null;
+            var bed = await _bedRepository.GetAll()
+                .Include(b => b.Room)
+                .ThenInclude(r => r.HousingUnit)
+                .FirstOrDefaultAsync(b => b.BedId == request.BedId.Value);
+
+            if (bed == null)
+                throw new InvalidOperationException("Bed not found.");
+
+            if (bed.Room == null)
+                throw new InvalidOperationException("Bed is not associated with a room.");
+
+            resolvedRoomId = bed.RoomId;
+            resolvedHousingUnitId = bed.Room.HousingUnitId;
+
+            if (bed.Room.HousingUnit == null)
+                throw new InvalidOperationException("Room is not associated with a housing unit.");
+
+            // Validate landlord is verified
+            var landlord = await _landLordRepository.GetAsync(bed.Room.HousingUnit.LandLordId);
+            if (landlord == null || !landlord.IsVerified)
+                throw new InvalidOperationException("The landlord of this property has not been verified by admin. Booking is not allowed.");
+
+            // Validate bed is available
+            if (!bed.IsAvailable || bed.IsOccupied)
+                throw new InvalidOperationException("This bed is not available for booking.");
         }
+        else if (request.RoomId.HasValue)
+        {
+            var room = await _roomRepository.GetAll()
+                .Include(r => r.HousingUnit)
+                .FirstOrDefaultAsync(r => r.RoomId == request.RoomId.Value);
+
+            if (room == null)
+                throw new InvalidOperationException("Room not found.");
+
+            if (room.HousingUnit == null)
+                throw new InvalidOperationException("Room is not associated with a housing unit.");
+
+            resolvedHousingUnitId = room.HousingUnitId;
+
+            // Validate landlord is verified
+            var landlord = await _landLordRepository.GetAsync(room.HousingUnit.LandLordId);
+            if (landlord == null || !landlord.IsVerified)
+                throw new InvalidOperationException("The landlord of this property has not been verified by admin. Booking is not allowed.");
+
+            // Validate room is available
+            if (!room.IsAvailable)
+                throw new InvalidOperationException("This room is not available for booking.");
+        }
+        else if (request.HousingUnitId.HasValue)
+        {
+            var unit = await _housingUnitRepository.GetAsync(request.HousingUnitId.Value);
+            if (unit == null)
+                throw new InvalidOperationException("Housing unit not found.");
+
+            // Validate landlord is verified
+            var landlord = await _landLordRepository.GetAsync(unit.LandLordId);
+            if (landlord == null || !landlord.IsVerified)
+                throw new InvalidOperationException("The landlord of this property has not been verified by admin. Booking is not allowed.");
+
+            // Validate unit is available
+            if (!unit.IsAvailable)
+                throw new InvalidOperationException("This housing unit is not available for booking.");
+        }
+
+        // Infer the effective booking type from whichever ID was actually provided.
+        BookingType effectiveType =
+            request.BedId.HasValue ? BookingType.Bed :
+            request.RoomId.HasValue ? BookingType.Room :
+            BookingType.Unit;
+
+        Guid targetId = (request.BedId ?? request.RoomId ?? request.HousingUnitId)!.Value;
 
         // Calculate total price using the pricing service
         decimal totalPrice = 0;
         try
         {
             totalPrice = await _pricingService.CalculateBookingPriceAsync(
-                request.BookingType,
-                targetId.Value,
+                effectiveType,
+                targetId,
                 request.StartDate,
                 request.EndDate);
         }
-        catch
+        catch (Exception ex)
         {
-            return null;
+            throw new InvalidOperationException($"Failed to calculate booking price: {ex.Message}", ex);
         }
 
         // Check for booking conflicts
         var hasConflict = await _bookingConflictService.HasBookingConflictAsync(
-            request.BookingType,
-            targetId.Value,
+            effectiveType,
+            targetId,
             request.StartDate,
             request.EndDate);
 
         if (hasConflict)
         {
-            return null;
+            throw new InvalidOperationException("A booking conflict exists for the selected dates and target.");
         }
 
         var booking = new Domain.Entities.Booking
         {
             BookingId = Guid.NewGuid(),
             StudentId = request.StudentId,
-            BookingType = request.BookingType,
+            BookingType = effectiveType,
             BedId = request.BedId,
-            RoomId = request.RoomId,
-            HousingUnitId = request.HousingUnitId,
+            RoomId = resolvedRoomId,
+            HousingUnitId = resolvedHousingUnitId,
             StartDate = request.StartDate,
             EndDate = request.EndDate,
             TotalPrice = totalPrice,
-            BookingStatus = BookingStatus.Pending,
+            BookingStatus = BookingStatus.PendingPayment,
             IsDeleted = false,
             CreatedAt = DateTime.UtcNow
         };
@@ -281,7 +447,6 @@ public class BookingService : IBookingService
         await _commissionRecordRepository.Insert(commissionRecord);
         await _commissionRecordRepository.CommitAsync();
 
-        var student = await _studentRepository.GetAsync(request.StudentId);
         if (student?.UserId != null)
         {
             try
@@ -337,6 +502,16 @@ public class BookingService : IBookingService
             booking.BookingStatus = request.BookingStatus.Value;
         }
 
+        // Recalculate total price if dates changed
+        if (request.StartDate.HasValue || request.EndDate.HasValue)
+        {
+            booking.TotalPrice = await _pricingService.CalculateBookingPriceAsync(
+                booking.BookingType,
+                booking.BedId ?? booking.RoomId ?? booking.HousingUnitId!.Value,
+                booking.StartDate,
+                booking.EndDate);
+        }
+
         booking.UpdatedAt = DateTime.UtcNow;
 
         await _bookingRepository.Update(booking);
@@ -368,8 +543,23 @@ public class BookingService : IBookingService
         var booking = await _bookingRepository.GetAsync(bookingId);
         if (booking == null) return false;
 
+        // Cancellation is only allowed before admin approval
+        var cancellableStatuses = new[]
+        {
+            BookingStatus.PendingPayment,
+            BookingStatus.WaitingForContract,
+            BookingStatus.WaitingForSignatures,
+            BookingStatus.WaitingForStudentSignature,
+            BookingStatus.WaitingForLandlordSignature,
+            BookingStatus.WaitingForAdminApproval
+        };
+
+        if (!cancellableStatuses.Contains(booking.BookingStatus))
+            return false;
+
         booking.BookingStatus = BookingStatus.Cancelled;
         booking.IsDeleted = true;
+        booking.UpdatedAt = DateTime.UtcNow;
 
         await _bookingRepository.Update(booking);
         await _bookingRepository.CommitAsync();
@@ -429,12 +619,12 @@ public class BookingService : IBookingService
             throw new InvalidOperationException("Booking not found.");
         }
 
-        if (booking.BookingStatus != BookingStatus.PaymentPending)
+        if (booking.BookingStatus != BookingStatus.PendingPayment)
         {
-            throw new InvalidOperationException("Booking is not in PaymentPending state.");
+            throw new InvalidOperationException("Booking is not in PendingPayment state.");
         }
 
-        booking.BookingStatus = BookingStatus.Approved;
+        booking.BookingStatus = BookingStatus.WaitingForContract;
         booking.UpdatedAt = DateTime.UtcNow;
         await _bookingRepository.Update(booking);
         await _bookingRepository.CommitAsync();

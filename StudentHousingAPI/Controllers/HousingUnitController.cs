@@ -1,6 +1,7 @@
 using Business.DTOs.Requests;
 using Business.DTOs.Responses;
 using Business.Interfaces;
+using Domain.Enums;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -12,10 +13,12 @@ namespace StudentHousingAPI.Controllers;
 public class HousingUnitController : BaseController
 {
     private readonly IHousingUnitService _housingUnitService;
+    private readonly INotificationService _notificationService;
 
-    public HousingUnitController(IHousingUnitService housingUnitService)
+    public HousingUnitController(IHousingUnitService housingUnitService, INotificationService notificationService)
     {
         _housingUnitService = housingUnitService;
+        _notificationService = notificationService;
     }
 
     [HttpGet("map-pins")]
@@ -27,6 +30,7 @@ public class HousingUnitController : BaseController
     }
 
     [HttpGet("GetById/{id}")]
+    [AllowAnonymous]
     public async Task<IActionResult> GetHousingUnit(Guid id)
     {
         var result = await _housingUnitService.GetHousingUnitByIdAsync(id);
@@ -36,6 +40,7 @@ public class HousingUnitController : BaseController
     }
 
     [HttpGet("GetDetailsById/{id}")]
+    [AllowAnonymous]
     public async Task<IActionResult> GetHousingUnitDetails(Guid id)
     {
         var result = await _housingUnitService.GetHousingUnitDetailsAsync(id);
@@ -45,6 +50,7 @@ public class HousingUnitController : BaseController
     }
 
     [HttpGet("GetAll")]
+    [AllowAnonymous]
     public async Task<IActionResult> GetHousingUnits([FromQuery] HousingUnitFilterRequest filter)
     {
         var result = await _housingUnitService.GetHousingUnitsAsync(filter);
@@ -58,6 +64,7 @@ public class HousingUnitController : BaseController
         var result = await _housingUnitService.CreateHousingUnitAsync(request);
         if (result == null)
             return StatusCode(StatusCodes.Status403Forbidden, new { Message = "Your account is pending admin approval." });
+        try { await _notificationService.SendNotificationToRoleAsync("Admin", $"A new housing unit \"{request.Title}\" has been created and needs review.", NotificationTypes.NewHousingUnit); } catch { }
         return Ok(result);
     }
 
@@ -68,6 +75,7 @@ public class HousingUnitController : BaseController
         var result = await _housingUnitService.UpdateHousingUnitAsync(request);
         if (result == null)
             return StatusCode(StatusCodes.Status403Forbidden, new { Message = "Your account is pending admin approval." });
+        try { await _notificationService.SendNotificationToRoleAsync("Admin", $"Housing unit has been updated.", NotificationTypes.HousingUnitUpdated); } catch { }
         return Ok(result);
     }
 
@@ -78,6 +86,7 @@ public class HousingUnitController : BaseController
         var result = await _housingUnitService.DeleteHousingUnitAsync(id);
         if (!result)
             return NotFound();
+        try { await _notificationService.SendNotificationToRoleAsync("Admin", $"A housing unit has been deleted.", NotificationTypes.HousingUnitDeleted); } catch { }
         return Ok();
     }
 }
