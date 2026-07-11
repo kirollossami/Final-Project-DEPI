@@ -15,3 +15,8 @@ public class ReviewVerificationRequest
 {
     public UniversityVerificationStatus NewStatus { get; set; }
 }
+
+public class UpdateLandlordVerificationStatusRequest
+{
+    public string Status { get; set; }
+}

@@ -38,6 +38,49 @@ public class ComplaintController : BaseController
     }
 
     /// <summary>
+    /// Get all complaints (Admin only)
+    /// </summary>
+    [HttpGet("all")]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> GetAllComplaints(
+        [FromQuery] int pageNumber = 1,
+        [FromQuery] int pageSize = 10,
+        [FromQuery] Guid? studentId = null,
+        [FromQuery] Guid? housingUnitId = null,
+        [FromQuery] ComplaintStatus? status = null)
+    {
+        try
+        {
+            var filter = new ComplaintFilterRequest
+            {
+                StudentId = studentId,
+                HousingUnitId = housingUnitId,
+                Status = status,
+                PageNumber = pageNumber,
+                PageSize = pageSize
+            };
+
+            var complaints = await _complaintService.GetComplaintsAsync(filter);
+
+            _logger.LogInformation($"Admin retrieved {complaints.Records.Count()} complaints");
+
+            return Ok(new
+            {
+                Success = true,
+                Data = complaints.Records,
+                TotalRecords = complaints.TotalRecords,
+                PageIndex = complaints.PageIndex,
+                PageSize = complaints.PageSize
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving complaints");
+            return BadRequest(new { Message = "Error retrieving complaints", Error = ex.Message });
+        }
+    }
+
+    /// <summary>
     /// Get all complaints for the current student
     /// </summary>
     [HttpGet]
