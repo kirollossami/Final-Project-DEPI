@@ -4,6 +4,9 @@ using Business.Interfaces;
 using Domain.Entities;
 using Infrastructure.Repositories;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
+using Shared.Cache;
+using Shared.Cache.Helper;
 
 namespace Business.Services;
 
@@ -11,11 +14,13 @@ public class HousingUnitService : IHousingUnitService
 {
     private readonly IHousingUnitRepository _housingUnitRepository;
     private readonly ILandLordService _landLordService;
+    private readonly ICacheService _cache;
 
-    public HousingUnitService(IHousingUnitRepository housingUnitRepository, ILandLordService landLordService)
+    public HousingUnitService(IHousingUnitRepository housingUnitRepository, ILandLordService landLordService, ICacheService cache)
     {
         _housingUnitRepository = housingUnitRepository;
         _landLordService = landLordService;
+        _cache = cache;
     }
 
     public async Task<HousingUnitResponse?> GetHousingUnitByIdAsync(Guid housingUnitId)
@@ -53,6 +58,12 @@ public class HousingUnitService : IHousingUnitService
 
     public async Task<List<MapPinResponse>> GetMapPinsAsync()
     {
+
+        if (_cache.TryGet(CacheHelper.HousingUnitsMapPinsCacheKey, out List<MapPinResponse>? cachedPins))
+        {
+            return cachedPins;
+        }
+
         var units = await _housingUnitRepository.GetAll()
             .Where(h => !h.IsDeleted)
             .Select(h => new MapPinResponse
@@ -66,47 +77,49 @@ public class HousingUnitService : IHousingUnitService
             })
             .ToListAsync();
 
+        _cache.Set(CacheHelper.HousingUnitsMapPinsCacheKey, units);
+
         return units;
     }
 
     public async Task<HousingUnitIndexedResponse> GetHousingUnitsAsync(HousingUnitFilterRequest filter)
     {
+        var hasNoFilters = !filter.LandLordId.HasValue
+            && string.IsNullOrEmpty(filter.City)
+            && string.IsNullOrEmpty(filter.Area)
+            && !filter.MinPrice.HasValue
+            && !filter.MaxPrice.HasValue
+            && !filter.GenderAllowed.HasValue
+            && !filter.IsAvailable.HasValue;
+
+        if (hasNoFilters && filter.PageNumber == 1 && filter.PageSize == 10)
+        {
+            if (_cache.TryGet(CacheHelper.StudentHousingCacheKey, out HousingUnitIndexedResponse? cached))
+                return cached;
+        }
+
         var query = _housingUnitRepository.GetAll().AsQueryable();
 
         if (filter.LandLordId.HasValue)
-        {
             query = query.Where(h => h.LandLordId == filter.LandLordId.Value);
-        }
 
         if (!string.IsNullOrEmpty(filter.City))
-        {
             query = query.Where(h => h.City == filter.City);
-        }
 
         if (!string.IsNullOrEmpty(filter.Area))
-        {
             query = query.Where(h => h.Area == filter.Area);
-        }
 
         if (filter.MinPrice.HasValue)
-        {
             query = query.Where(h => h.Price >= filter.MinPrice.Value);
-        }
 
         if (filter.MaxPrice.HasValue)
-        {
             query = query.Where(h => h.Price <= filter.MaxPrice.Value);
-        }
 
         if (filter.GenderAllowed.HasValue)
-        {
             query = query.Where(h => h.GenderAllowed == filter.GenderAllowed.Value);
-        }
 
         if (filter.IsAvailable.HasValue)
-        {
             query = query.Where(h => h.IsAvailable == filter.IsAvailable.Value);
-        }
 
         var totalCount = await query.CountAsync();
         var housingUnits = await query
@@ -114,7 +127,7 @@ public class HousingUnitService : IHousingUnitService
             .Take(filter.PageSize)
             .ToListAsync();
 
-        return new HousingUnitIndexedResponse
+        var response = new HousingUnitIndexedResponse
         {
             Records = housingUnits.Select(h => new HousingUnitResponse
             {
@@ -146,6 +159,11 @@ public class HousingUnitService : IHousingUnitService
             PageIndex = filter.PageNumber - 1,
             PageSize = filter.PageSize
         };
+
+        if (hasNoFilters && filter.PageNumber == 1 && filter.PageSize == 10)
+            _cache.Set(CacheHelper.StudentHousingCacheKey, response);
+
+        return response;
     }
 
     public async Task<HousingUnitResponse?> CreateHousingUnitAsync(HousingUnitCreateRequest request)
@@ -187,6 +205,8 @@ public class HousingUnitService : IHousingUnitService
 
             await _housingUnitRepository.Insert(housingUnit);
             await _housingUnitRepository.CommitAsync();
+
+            _cache.Remove(CacheHelper.StudentHousingCacheKey); // Invalidate cache
 
             return new HousingUnitResponse
             {
@@ -319,6 +339,9 @@ public class HousingUnitService : IHousingUnitService
         _housingUnitRepository.Update(housingUnit);
         await _housingUnitRepository.CommitAsync();
 
+        _cache.Remove(CacheHelper.StudentHousingCacheKey); // Invalidate cache
+
+
         return new HousingUnitResponse
         {
             HousingUnitId = housingUnit.HousingUnitId,
@@ -360,6 +383,9 @@ public class HousingUnitService : IHousingUnitService
 
         await _housingUnitRepository.Delete(housingUnit);
         await _housingUnitRepository.CommitAsync();
+
+        _cache.Remove(CacheHelper.StudentHousingCacheKey); // Invalidate cache
+
 
         return true;
     }
