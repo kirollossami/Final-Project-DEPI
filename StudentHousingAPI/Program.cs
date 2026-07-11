@@ -14,6 +14,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using Shared.Cache;
 using SharpGrip.FluentValidation.AutoValidation.Endpoints.Extensions;
 using StudentHousingAPI.Validators;
 using System.Text;
@@ -54,8 +55,13 @@ builder.Logging.SetMinimumLevel(LogLevel.Information);
 builder.Services.AddControllers();
 builder.Services.AddHttpContextAccessor();
 
-// Configure DbContext
-builder.Services.AddDbContext<StudentHousingDBContext>(options =>
+    #region cache
+    builder.Services.AddMemoryCache();
+    builder.Services.AddSingleton<ICacheService, CacheService>();
+    #endregion
+
+    // Configure DbContext
+    builder.Services.AddDbContext<StudentHousingDBContext>(options =>
     options.UseSqlServer(
         builder.Configuration.GetConnectionString("DefaultConnection"),
         sqlOptions =>
