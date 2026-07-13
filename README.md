@@ -18,18 +18,6 @@
 
 Or access live at: https://unistay-shbs.vercel.app/
 
-## Admin Login
-Email: admin@studenthousing.com
-Password: Admin@123456
-
-## Student Login
-Email: studentone@gmail.com
-Password: Student@123
-
-## Landlord Login
-Email: landone@gmail.com
-Password: Land@123
-
 ## Technologies Used
 - Angular 20
 - ASP.NET Web APIs
